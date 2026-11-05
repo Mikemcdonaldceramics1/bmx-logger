@@ -1,0 +1,7 @@
+# BMX logger partition table for 4 MB ESP32 (ESP-WROOM-32)
+# Arduino IDE picks this up automatically because it sits in the sketch folder.
+# Name,    Type, SubType, Offset,   Size
+nvs,       data, nvs,     0x9000,   0x5000
+phy_init,  data, phy,     0xe000,   0x1000
+factory,   app,  factory, 0x10000,  0x180000
+runs,      data, 0x40,    0x190000, 0x270000

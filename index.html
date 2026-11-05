@@ -1,0 +1,1025 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>BMX Logger</title>
+<style>
+:root{
+  --bg:#f4f5f7;--card:#ffffff;--ink:#16181d;--muted:#5d6470;--line:#dde0e6;
+  --accent:#e4572e;--accent-ink:#ffffff;--ok:#1f9d55;--warn:#d97706;--bad:#d1293d;
+  --pedal:rgba(31,157,85,.16);--coast:rgba(217,119,6,.18);--grid:#e7e9ee;--axis:#8a909b;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#101215;--card:#1a1d22;--ink:#eef0f3;--muted:#9aa1ad;--line:#2b2f37;
+  --accent:#ff6a3d;--accent-ink:#14100e;--grid:#262a31;--axis:#6c727d;
+  --pedal:rgba(52,199,110,.18);--coast:rgba(245,158,11,.20);color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#101215;--card:#1a1d22;--ink:#eef0f3;--muted:#9aa1ad;--line:#2b2f37;
+  --accent:#ff6a3d;--accent-ink:#14100e;--grid:#262a31;--axis:#6c727d;
+  --pedal:rgba(52,199,110,.18);--coast:rgba(245,158,11,.20);color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--card)}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;display:flex;align-items:center;gap:10px;padding-block:12px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:var(--card);border-bottom:1px solid var(--line)}
+.hbtn{border:0;border-radius:99px;background:var(--accent);color:var(--accent-ink);font:700 14px system-ui,sans-serif;padding:8px 16px}
+.hbtn:disabled{opacity:.5}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(72px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:10px;font-size:13px;max-width:calc(100% - 32px);z-index:20}
+#demoBar{background:var(--card);border-bottom:1px solid var(--line);padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));font-size:13px;color:var(--muted)}
+#demoBar b{color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+header h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.2px;flex:1}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--bad)}
+.dot.on{background:var(--ok)}
+#conn{font-size:12px;color:var(--muted)}
+main{padding-block:12px 96px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:760px;margin:0 auto}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);z-index:5}
+nav button{flex:1;background:none;border:0;color:var(--muted);font:600 13px system-ui,sans-serif;padding:14px 4px}
+nav button.active{color:var(--accent)}
+.tab{display:none}.tab.active{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.card h2{font-size:14px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+.big{display:flex;align-items:baseline;gap:8px}
+.big b{font-size:40px;font-variant-numeric:tabular-nums;line-height:1}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.stat{background:var(--bg);border-radius:10px;padding:8px 10px}
+.stat span{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.stat b{font-size:20px;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:700;text-transform:uppercase;background:var(--bg);color:var(--muted)}
+.pill.recording{background:var(--bad);color:#fff}
+.pill.preparing,.pill.saving{background:var(--warn);color:#fff}
+label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
+input,select{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-size:16px}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.btn{display:block;width:100%;border:0;border-radius:12px;padding:16px;font:700 18px system-ui,sans-serif;background:var(--accent);color:var(--accent-ink)}
+.btn.stop{background:var(--bad);color:#fff}
+.btn.sec{background:var(--bg);color:var(--ink);border:1px solid var(--line);font-size:15px;padding:12px}
+.btn:disabled{opacity:.45}
+.small{font-size:12px;color:var(--muted)}
+.err{color:var(--bad);font-size:13px;margin-top:8px}
+.run{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.run:first-child{border-top:0}
+.run input[type=checkbox]{width:22px;height:22px;flex:none}
+.run .info{flex:1;min-width:0}
+.run .info b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.run button{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{padding:6px 6px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:600}
+.scroll{overflow-x:auto}
+.chart{position:relative}
+.chart canvas{width:100%;height:220px;display:block;touch-action:pan-y}
+.readout{min-height:18px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;margin-bottom:4px}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;margin-top:6px;color:var(--muted)}
+.legend i{display:inline-block;width:12px;height:3px;border-radius:2px;vertical-align:middle;margin-right:4px}
+.legend i.band{height:10px;width:12px}
+.note{font-size:12px;color:var(--muted);margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <h1>BMX Logger</h1>
+  <span id="conn">offline</span>
+  <button type="button" class="hbtn" id="bleBtn" hidden>Connect</button>
+</header>
+
+<main>
+<!-- RECORD -->
+<section class="tab active" id="tab-record">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <span class="pill" id="st">idle</span>
+      <span class="small" id="stInfo"></span>
+    </div>
+    <div class="big"><b id="liveSpeed">0.0</b><span id="liveSpeedU">mph</span></div>
+    <div class="grid" style="margin-top:12px">
+      <div class="stat"><span>Pedal RPM</span><b id="liveCad">0</b></div>
+      <div class="stat"><span>Accel g</span><b id="liveG">0.00</b></div>
+      <div class="stat"><span>Run time</span><b id="liveTime">0.0</b></div>
+      <div class="stat"><span>Wheel pulses</span><b id="liveWp">0</b></div>
+      <div class="stat"><span>Crank pulses</span><b id="liveCp">0</b></div>
+      <div class="stat"><span>Sensor</span><b id="liveImu" style="font-size:14px">-</b></div>
+    </div>
+    <div class="err" id="recErr"></div>
+  </div>
+
+  <div class="card">
+    <h2>Next run</h2>
+    <label for="label">Label</label>
+    <input id="label" maxlength="19" placeholder="e.g. 44/16 gate 1">
+    <div class="row">
+      <div><label for="ring">Chainring</label><input id="ring" type="number" inputmode="numeric" min="20" max="70"></div>
+      <div><label for="cog">Cog</label><input id="cog" type="number" inputmode="numeric" min="9" max="30"></div>
+    </div>
+    <p class="note" id="rollNote"></p>
+    <button class="btn" id="armBtn" style="margin-top:12px">Arm</button>
+    <button class="btn sec" id="markBtn" style="margin-top:8px;display:none">Mark this moment</button>
+    <p class="note">After arming, keep the bike still and level for 1 second so the sensor can find "level". Recording stops by itself once the wheel has been still for the auto-stop time.</p>
+  </div>
+</section>
+
+<!-- RUNS -->
+<section class="tab" id="tab-runs">
+  <div class="card">
+    <h2>Runs on logger</h2>
+    <div id="runList"><p class="small">Loading...</p></div>
+  </div>
+  <div class="card">
+    <h2>Runs from files</h2>
+    <div id="fileList"><p class="small">None yet.</p></div>
+    <label for="importFile">Open saved .bin files</label>
+    <input id="importFile" type="file" accept=".bin,application/octet-stream" multiple>
+  </div>
+  <button class="btn" id="compareBtn">Analyze selected</button>
+</section>
+
+<!-- ANALYZE -->
+<section class="tab" id="tab-analyze">
+  <div id="anaEmpty" class="card"><p class="small">Select one or more runs on the Runs tab, then tap Analyze selected.</p></div>
+  <div id="anaBody" style="display:none">
+    <div class="card"><h2>Summary</h2><div class="scroll" id="summary"></div>
+      <p class="note">Split times count from the first wheel magnet pass after the bike starts moving, so keep magnets in the same spots between runs.</p></div>
+    <div class="card"><h2>Speed vs distance</h2><div class="readout" id="ro-sd"></div><div class="chart"><canvas id="c-sd"></canvas></div><div class="legend" id="lg-sd"></div>
+      <p class="note">The curve that sits higher early on is the gearing that rolls out faster.</p></div>
+    <div class="card">
+      <h2>Run detail</h2>
+      <select id="detailSel"></select>
+      <div style="margin-top:12px" class="readout" id="ro-sc"></div><div class="chart"><canvas id="c-sc"></canvas></div><div class="legend" id="lg-sc"></div>
+      <div style="margin-top:14px" class="readout" id="ro-pi"></div><div class="chart"><canvas id="c-pi"></canvas></div><div class="legend" id="lg-pi"></div>
+      <div style="margin-top:14px" class="readout" id="ro-ag"></div><div class="chart"><canvas id="c-ag"></canvas></div><div class="legend" id="lg-ag"></div>
+      <div class="err" id="detailWarn"></div>
+      <button class="btn sec" id="csvBtn" style="margin-top:12px">Export this run as CSV</button>
+    </div>
+  </div>
+</section>
+
+<!-- SETTINGS -->
+<section class="tab" id="tab-settings">
+  <div class="card">
+    <h2>Bike</h2>
+    <label for="sCirc">Rear wheel circumference (mm)</label>
+    <input id="sCirc" type="number" inputmode="numeric">
+    <p class="note">Measure it: chalk the tire, sit on the bike, roll one full turn, measure between marks. 20x1.75 is about 1515 mm.</p>
+    <div class="row">
+      <div><label for="sWm">Wheel magnets</label><input id="sWm" type="number" inputmode="numeric" min="1" max="16"></div>
+      <div><label for="sCm">Crank magnets</label><input id="sCm" type="number" inputmode="numeric" min="1" max="4"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Logger</h2>
+    <label for="sFwd">Sensor axis pointing to the front wheel</label>
+    <select id="sFwd">
+      <option value="0">+X</option><option value="1">-X</option>
+      <option value="2">+Y</option><option value="3">-Y</option>
+      <option value="4">+Z</option><option value="5">-Z</option>
+    </select>
+    <div class="row">
+      <div><label for="sRate">Sample rate (Hz)</label>
+        <select id="sRate"><option>100</option><option>200</option><option selected>250</option><option>400</option><option>500</option></select></div>
+      <div><label for="sAuto">Auto-stop after (s still)</label><input id="sAuto" type="number" inputmode="numeric" min="0" max="60"></div>
+    </div>
+    <p class="note">Each run slot holds about 68 s at 250 Hz, 34 s at 500 Hz. The logger keeps the newest runs and overwrites the oldest.</p>
+    <button class="btn" id="saveSettings" style="margin-top:12px">Save to logger</button>
+    <div class="err" id="setErr"></div>
+  </div>
+  <div class="card">
+    <h2>Display</h2>
+    <label for="units">Units</label>
+    <select id="units"><option value="imperial">mph and feet</option><option value="metric">km/h and meters</option></select>
+    <label for="splits">Split distances (comma separated)</label>
+    <input id="splits">
+  </div>
+</section>
+</main>
+
+<nav>
+  <button data-tab="record" class="active">Record</button>
+  <button data-tab="runs">Runs</button>
+  <button data-tab="analyze">Analyze</button>
+  <button data-tab="settings">Settings</button>
+</nav>
+
+<script id="analysis">
+/* ---------- run file parsing + analysis (no DOM; also used by tests) ---------- */
+const BMX = (() => {
+  const MAGIC = 0x4C584D42;
+  const AXES = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+
+  function parseRun(buf) {
+    const dv = new DataView(buf);
+    if (buf.byteLength < 64 || dv.getUint32(0, true) !== MAGIC) throw new Error('Not a BMX logger run file');
+    let label = '';
+    for (let i = 36; i < 56; i++) { const c = dv.getUint8(i); if (!c) break; label += String.fromCharCode(c); }
+    const hdr = {
+      version: dv.getUint16(4, true), runId: dv.getUint32(8, true), rateHz: dv.getUint16(12, true),
+      imuType: dv.getUint8(14), accLsbPerG: dv.getFloat32(16, true), gyrLsbPerDps: dv.getFloat32(20, true),
+      epoch: dv.getUint32(24, true), wheelMagnets: dv.getUint8(28) || 1, crankMagnets: dv.getUint8(29) || 1,
+      chainring: dv.getUint8(30), cog: dv.getUint8(31), wheelCircMm: dv.getUint16(32, true),
+      forwardAxis: dv.getUint8(34), label, dataBytes: dv.getUint32(56, true)
+    };
+    let bytes = buf.byteLength - 64;
+    if (hdr.dataBytes !== 0xFFFFFFFF && hdr.dataBytes < bytes) bytes = hdr.dataBytes;
+    const n = Math.floor(bytes / 16);
+    const t = [], ax = [], ay = [], az = [], gx = [], gy = [], gz = [], wheel = [], crank = [], marks = [];
+    let clipped = false;
+    const a = hdr.accLsbPerG, g = hdr.gyrLsbPerDps;
+    for (let i = 0; i < n; i++) {
+      const o = 64 + i * 16;
+      const tw = dv.getUint32(o, true);
+      if (tw === 0xFFFFFFFF) break;
+      const type = tw >>> 30, ts = (tw & 0x3FFFFFFF) / 1e6;
+      if (type === 0) {
+        const r = [];
+        for (let k = 0; k < 6; k++) { const v = dv.getInt16(o + 4 + 2 * k, true); r.push(v); if (v >= 32760 || v <= -32760) clipped = true; }
+        t.push(ts); ax.push(r[0] / a); ay.push(r[1] / a); az.push(r[2] / a);
+        gx.push(r[3] / g); gy.push(r[4] / g); gz.push(r[5] / g);
+      } else if (type === 1) wheel.push(ts);
+      else if (type === 2) crank.push(ts);
+      else marks.push(ts);
+    }
+    const num = (x, y) => x - y;
+    wheel.sort(num); crank.sort(num); marks.sort(num);
+    return { hdr, imu: { t, ax, ay, az, gx, gy, gz }, wheel, crank, marks, clipped };
+  }
+
+  function lerpTime(xs, ts, x) {           // time when cumulative value xs reaches x
+    for (let i = 1; i < xs.length; i++) if (xs[i] >= x) {
+      const f = (x - xs[i - 1]) / (xs[i] - xs[i - 1]);
+      return ts[i - 1] + f * (ts[i] - ts[i - 1]);
+    }
+    return null;
+  }
+
+  function percentile(arr, p) {
+    if (!arr.length) return null;
+    const s = arr.slice().sort((x, y) => x - y);
+    const idx = Math.min(s.length - 1, Math.max(0, Math.round(p * (s.length - 1))));
+    return s[idx];
+  }
+
+  function analyze(run, opts) {
+    const o = Object.assign({ splitsM: [5, 10, 20, 30], gapS: 1.5 }, opts || {});
+    const h = run.hdr, circ = h.wheelCircMm / 1000, wm = h.wheelMagnets, cm = h.crankMagnets;
+    const step = circ / wm, W = run.wheel, C = run.crank;
+    const res = { hdr: h, warnings: [], expectedRatio: h.cog ? h.chainring / h.cog : null };
+    res.rolloutM = res.expectedRatio ? circ * res.expectedRatio : null;
+    res.gearInches = res.expectedRatio ? (h.wheelCircMm / Math.PI / 25.4) * res.expectedRatio : null;
+    if (run.clipped) res.warnings.push('Motion sensor hit its limit (clipped) during this run.');
+
+    // ---- wheel: speed per pulse, find the launch
+    if (W.length < 3) {
+      res.warnings.push('Fewer than 3 wheel pulses: check the wheel magnet sensor.');
+      res.t0 = run.imu.t.length ? run.imu.t[0] : 0;
+    } else {
+      const v = new Array(W.length).fill(0);
+      for (let i = 1; i < W.length; i++) {
+        let k = 1;
+        while (k < wm && i - k - 1 >= 0 && W[i] - W[i - k - 1] < o.gapS * (k + 1)) k++;
+        const dt = W[i] - W[i - k];
+        v[i] = dt > 0 && dt < o.gapS * k ? (k * step) / dt : 0;
+      }
+      let p = 0;
+      for (let i = 1; i < v.length; i++) if (v[i] > v[p]) p = i;
+      let s = p;
+      while (s > 0 && W[s] - W[s - 1] < o.gapS) s--;
+      let e = p;
+      while (e < W.length - 1 && W[e + 1] - W[e] < o.gapS) e++;
+      res.t0 = W[s];
+      const t = [], d = [], sp = [];
+      for (let i = s; i <= e; i++) { t.push(W[i] - res.t0); d.push((i - s) * step); sp.push(i === s ? 0 : v[i]); }
+      res.wheel = { t, d, v: sp };
+      res.peakSpeed = v[p];
+      res.peakT = W[p] - res.t0;
+      res.peakD = (p - s) * step;
+      res.totalD = (e - s) * step;
+      res.moveEnd = W[e] - res.t0;
+      res.splits = o.splitsM.map(m => ({ m, t: lerpTime(d, t, m) }));
+    }
+
+    // ---- crank: cadence + pedaling vs coasting
+    const wheelDistAt = tt => {             // distance (m) at absolute time tt, from raw pulses
+      if (!W.length || tt <= W[0]) return 0;
+      if (tt >= W[W.length - 1]) return (W.length - 1) * step;
+      let lo = 0, hi = W.length - 1;
+      while (hi - lo > 1) { const m = (lo + hi) >> 1; if (W[m] <= tt) lo = m; else hi = m; }
+      return (lo + (tt - W[lo]) / (W[hi] - W[lo])) * step;
+    };
+    const cad = { t: [], rpm: [] }, ratios = [], intervals = [];
+    for (let j = 1; j < C.length; j++) {
+      const dt = C[j] - C[j - 1];
+      if (dt <= 0 || dt > o.gapS) continue;
+      cad.t.push(C[j] - res.t0);
+      cad.rpm.push(60 / (dt * cm));
+      const wheelRevs = (wheelDistAt(C[j]) - wheelDistAt(C[j - 1])) / circ;
+      const ratio = wheelRevs / (1 / cm);
+      intervals.push({ a: C[j - 1] - res.t0, b: C[j] - res.t0, ratio, speed: (wheelDistAt(C[j]) - wheelDistAt(C[j - 1])) / dt });
+      if (wheelRevs > 0 && (wheelDistAt(C[j]) - wheelDistAt(C[j - 1])) / dt > 1.5) ratios.push(ratio);
+    }
+    res.cadence = cad;
+    res.peakCadence = cad.rpm.length ? Math.max(...cad.rpm) : null;
+    res.measuredRatio = ratios.length >= 5 ? percentile(ratios, 0.2) : null;
+    if (res.expectedRatio && res.measuredRatio && Math.abs(res.measuredRatio / res.expectedRatio - 1) > 0.08)
+      res.warnings.push(`Measured gear ratio ${res.measuredRatio.toFixed(2)} differs from the entered ${h.chainring}/${h.cog} (${res.expectedRatio.toFixed(2)}). Check gearing, wheel circumference or magnet counts.`);
+
+    // bands over the moving part of the run
+    if (res.wheel) {
+      const ref = res.measuredRatio || res.expectedRatio || 1, bands = [];
+      let cursor = 0;
+      const push = (a, b, state) => {
+        if (b <= a) return;
+        const last = bands[bands.length - 1];
+        if (last && last.state === state && Math.abs(last.b - a) < 1e-6) last.b = b;
+        else bands.push({ a, b, state });
+      };
+      let firstIv = true;
+      for (const iv of intervals) {
+        if (iv.b <= 0 || iv.a >= res.moveEnd) continue;
+        const a = Math.max(0, iv.a), b = Math.min(res.moveEnd, iv.b);
+        const isPedal = iv.ratio <= ref * 1.15;
+        // the launch: cranks were already turning before the first full crank pass was timed
+        if (firstIv && isPedal && a > cursor && a <= o.gapS) { push(cursor, a, 'pedal'); cursor = a; }
+        firstIv = false;
+        if (a > cursor) push(cursor, a, 'coast');
+        push(Math.max(a, cursor), b, iv.ratio <= ref * 1.15 ? 'pedal' : 'coast');
+        cursor = Math.max(cursor, b);
+      }
+      if (cursor < res.moveEnd) push(cursor, res.moveEnd, 'coast');
+      res.bands = bands;
+      const ped = bands.filter(x => x.state === 'pedal').reduce((s, x) => s + x.b - x.a, 0);
+      res.pedalPct = res.moveEnd > 0 ? (100 * ped) / res.moveEnd : null;
+      if (C.length < 3) res.warnings.push('Fewer than 3 crank pulses: check the crank magnet sensor.');
+    }
+
+    // ---- IMU: g-force and pitch
+    const I = run.imu;
+    if (I.t.length > 20) {
+      const n = I.t.length, rate = h.rateHz || 250;
+      const calN = Math.max(5, Math.min(n, Math.round(0.4 * rate)));
+      let ux = 0, uy = 0, uz = 0;
+      for (let i = 0; i < calN; i++) { ux += I.ax[i]; uy += I.ay[i]; uz += I.az[i]; }
+      let um = Math.hypot(ux, uy, uz) || 1;
+      ux /= um; uy /= um; uz /= um;
+      const f0 = AXES[h.forwardAxis] || AXES[0];
+      const fd = f0[0] * ux + f0[1] * uy + f0[2] * uz;
+      let fx = f0[0] - fd * ux, fy = f0[1] - fd * uy, fz = f0[2] - fd * uz;
+      const fm = Math.hypot(fx, fy, fz);
+      const tg = [], gmag = [], pitch = [];
+      let peakG = 0;
+      for (let i = 0; i < n; i++) {
+        const m = Math.hypot(I.ax[i], I.ay[i], I.az[i]);
+        tg.push(I.t[i] - res.t0); gmag.push(m);
+        if (I.t[i] >= res.t0 && m > peakG) peakG = m;
+      }
+      res.peakG = peakG;
+      if (Math.abs(fd) > 0.8 || fm < 0.3) {
+        res.warnings.push('The forward axis setting points mostly up or down for this mounting, so pitch is not shown. Pick the axis that points toward the front wheel in Settings.');
+      } else {
+        fx /= fm; fy /= fm; fz /= fm;
+        const px = fy * uz - fz * uy, py = fz * ux - fx * uz, pz = fx * uy - fy * ux; // fwd x up
+        let p = 0;
+        for (let i = 0; i < n; i++) {
+          const dt = i ? Math.min(0.05, I.t[i] - I.t[i - 1]) : 0;
+          const rate_ = I.gx[i] * px + I.gy[i] * py + I.gz[i] * pz;
+          const a_f = I.ax[i] * fx + I.ay[i] * fy + I.az[i] * fz;
+          const a_u = I.ax[i] * ux + I.ay[i] * uy + I.az[i] * uz;
+          const accP = Math.atan2(a_f, a_u) * 180 / Math.PI;
+          p += rate_ * dt;
+          if (gmag[i] > 0.75 && gmag[i] < 1.25) p = 0.98 * p + 0.02 * accP;
+          if (i < calN) p = accP;
+          pitch.push(p);
+        }
+      }
+      res.imu = { t: tg, g: gmag, pitch: pitch.length ? pitch : null };
+    } else res.warnings.push('No motion sensor data in this run.');
+    res.marks = run.marks.map(x => x - res.t0);
+    return res;
+  }
+
+  function toCsv(run, res) {
+    const lines = ['time_s,type,ax_g,ay_g,az_g,gx_dps,gy_dps,gz_dps,pitch_deg'];
+    const I = run.imu, t0 = res.t0;
+    const ev = [];
+    for (let i = 0; i < I.t.length; i++) ev.push([I.t[i], 0, i]);
+    run.wheel.forEach(x => ev.push([x, 1])); run.crank.forEach(x => ev.push([x, 2])); run.marks.forEach(x => ev.push([x, 3]));
+    ev.sort((x, y) => x[0] - y[0]);
+    const f = x => x.toFixed(4);
+    for (const e of ev) {
+      const tt = (e[0] - t0).toFixed(6);
+      if (e[1] === 0) {
+        const i = e[2], p = res.imu && res.imu.pitch ? res.imu.pitch[i].toFixed(2) : '';
+        lines.push([tt, 'imu', f(I.ax[i]), f(I.ay[i]), f(I.az[i]), f(I.gx[i]), f(I.gy[i]), f(I.gz[i]), p].join(','));
+      } else lines.push([tt, ['', 'wheel', 'crank', 'mark'][e[1]], '', '', '', '', '', '', ''].join(','));
+    }
+    return lines.join('\n');
+  }
+
+  return { parseRun, analyze, toCsv };
+})();
+if (typeof module !== 'undefined') module.exports = BMX;
+</script>
+
+<script>
+/* ---------- UI ---------- */
+const $ = id => document.getElementById(id);
+const DEMO = !!window.BMX_DEMO;
+// ble = talks to the logger over Bluetooth; http = the shareable demo (simulated logger);
+// file = no Bluetooth in this browser, saved .bin files only
+// NATIVE = running inside the Android app (Capacitor), Bluetooth through the native plugin
+const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.BmxNative);
+const MODE = DEMO ? 'http' : ((NATIVE || navigator.bluetooth) ? 'ble' : 'file');
+const online = () => MODE === 'http' || (MODE === 'ble' && ble.connected);
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+};
+function toast(msg) {
+  let t = $('toast'); if (!t) { t = document.createElement('div'); t.id = 'toast'; t.setAttribute('role', 'status'); document.body.append(t); }
+  t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 3500);
+}
+const COLORS = ['#2563eb', '#e4572e', '#16a34a', '#9333ea', '#ca8a04', '#0891b2'];
+const runs = new Map();          // key -> {key, title, buf, run, res, meta}
+let deviceRuns = [], settings = null, lastStatus = null;
+
+const disp = {
+  get units() { return store.get('units') || 'imperial'; },
+  get splits() {
+    const s = store.get('splits_' + this.units);
+    const def = this.units === 'imperial' ? '25,50,100,150' : '5,10,20,30';
+    return (s || def).split(',').map(Number).filter(x => x > 0);
+  },
+  speed(ms) { return this.units === 'imperial' ? ms * 2.23694 : ms * 3.6; },
+  speedU() { return this.units === 'imperial' ? 'mph' : 'km/h'; },
+  dist(m) { return this.units === 'imperial' ? m * 3.28084 : m; },
+  distU() { return this.units === 'imperial' ? 'ft' : 'm'; },
+  toMeters(x) { return this.units === 'imperial' ? x / 3.28084 : x; },
+  rollout(m) { return this.units === 'imperial' ? (m * 39.3701).toFixed(1) + ' in' : m.toFixed(2) + ' m'; }
+};
+
+// ---- tabs
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+function showTab(name) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === 'tab-' + name));
+  if (name === 'runs') loadRuns();
+  if (name === 'analyze') renderAnalysis();
+}
+
+// ---- device API
+async function api(path, params, method, opts) {
+  if (MODE === 'ble') return bleApi(path, params, opts || {});
+  const opt = { method: method || (params ? 'POST' : 'GET') };
+  if (params) { opt.body = new URLSearchParams(params); opt.headers = { 'Content-Type': 'application/x-www-form-urlencoded' }; }
+  const r = await fetch(path, opt);
+  const ct = r.headers.get('content-type') || '';
+  const data = ct.includes('json') ? await r.json() : await r.arrayBuffer();
+  if (!r.ok) throw new Error((data && data.err) || ('HTTP ' + r.status));
+  return data;
+}
+
+function setConn(on) {
+  $('dot').classList.toggle('on', on === true);
+  if (MODE === 'file') { $('conn').textContent = 'file mode'; return; }
+  $('conn').textContent = on === true ? 'connected' : on === 'connecting' ? 'connecting...' : 'not connected';
+  if (MODE === 'ble') {
+    $('bleBtn').hidden = on === true;
+    $('bleBtn').disabled = on === 'connecting';
+  }
+}
+
+// ---- Bluetooth link (Chrome on Android). Protocol: see bmx_logger/ble_proto.h
+const BLE_SVC = '6e7a0001-3b2c-4d1a-9f5e-8b6c4d2a1f00', BLE_CMD = '6e7a0002-3b2c-4d1a-9f5e-8b6c4d2a1f00',
+      BLE_RESP = '6e7a0003-3b2c-4d1a-9f5e-8b6c4d2a1f00', BLE_STAT = '6e7a0004-3b2c-4d1a-9f5e-8b6c4d2a1f00';
+const ble = {
+  dev: null, cmd: null, connected: false, linking: false, queue: Promise.resolve(), pending: null,
+  bufs: { resp: [], stat: [] },
+  async nativeInit() {
+    if (this.nativeReady) return;
+    const C = BmxNative.BleClient;
+    await C.initialize({ androidNeverForLocation: true });
+    if (!(await C.isEnabled())) { try { await C.requestEnable(); } catch (e) { throw new Error('Turn on Bluetooth, then tap Connect.'); } }
+    this.nativeReady = true;
+  },
+  async choose() {
+    if (NATIVE) {
+      await this.nativeInit();
+      const d = await BmxNative.BleClient.requestDevice({ services: [BLE_SVC] });
+      this.dev = { id: d.deviceId };
+      store.set('bleId', d.deviceId);           // reconnect to this logger automatically next time
+    } else {
+      this.dev = await navigator.bluetooth.requestDevice({ filters: [{ services: [BLE_SVC] }] });
+      this.watch();
+    }
+    await this.link();
+  },
+  watch() { this.dev.addEventListener('gattserverdisconnected', () => this.dropped()); },
+  async link() {
+    if (this.linking || this.connected) return;
+    this.linking = true; setConn('connecting');
+    try {
+      if (NATIVE) await this.linkNative(); else await this.linkWeb();
+      this.connected = true; this.bufs = { resp: [], stat: [] };
+      setConn(true); onLinkUp();
+    } catch (e) { setConn(false); throw e; }
+    finally { this.linking = false; }
+  },
+  async linkNative() {
+    await this.nativeInit();
+    const C = BmxNative.BleClient, id = this.dev.id;
+    await C.connect(id, () => this.dropped(), { timeout: 10000 });
+    try { await C.requestConnectionPriority(id, 1); } catch (e) {}   // high priority = faster downloads
+    // the plugin replaces any earlier listener for the same characteristic, so reconnects don't double up
+    await C.startNotifications(id, BLE_SVC, BLE_RESP, v => this.frame(v, 'resp'));
+    await C.startNotifications(id, BLE_SVC, BLE_STAT, v => this.frame(v, 'stat'));
+    this.write = bytes => C.write(id, BLE_SVC, BLE_CMD, new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+  },
+  async linkWeb() {
+    {
+      const srv = await this.dev.gatt.connect();
+      const svc = await srv.getPrimaryService(BLE_SVC);
+      this.cmd = await svc.getCharacteristic(BLE_CMD);
+      const resp = await svc.getCharacteristic(BLE_RESP), stat = await svc.getCharacteristic(BLE_STAT);
+      // Chrome can hand back the same characteristic objects after a reconnect: attach each listener once
+      // (a second listener would process every frame twice and garble longer messages)
+      if (!this.onResp) {
+        this.onResp = e => this.frame(e.target.value, 'resp');
+        this.onStat = e => this.frame(e.target.value, 'stat');
+      }
+      resp.removeEventListener('characteristicvaluechanged', this.onResp);
+      stat.removeEventListener('characteristicvaluechanged', this.onStat);
+      resp.addEventListener('characteristicvaluechanged', this.onResp);
+      stat.addEventListener('characteristicvaluechanged', this.onStat);
+      await resp.startNotifications();
+      await stat.startNotifications();
+      this.write = bytes => this.cmd.writeValueWithResponse(bytes);
+    }
+  },
+  dropped() {
+    const was = this.connected;
+    this.connected = false; this.bufs = { resp: [], stat: [] };
+    if (this.pending) { const p = this.pending; this.pending = null; clearTimeout(p.timer); p.reject(new Error('Bluetooth disconnected')); }
+    setConn(false);
+    if (was) toast('Logger disconnected. Reconnecting...');
+    this.retrySoon(1500);
+  },
+  retrySoon(ms) {
+    clearTimeout(this.retryTimer);
+    this.retryTimer = setTimeout(async () => {
+      if (!this.dev || this.connected || document.hidden) return;
+      try { await this.link(); } catch (e) { this.retrySoon(4000); }
+    }, ms);
+  },
+  frame(dv, which) {
+    const flags = dv.getUint8(0), buf = this.bufs[which];
+    buf.push(new Uint8Array(dv.buffer.slice(dv.byteOffset + 1, dv.byteOffset + dv.byteLength)));
+    if (which === 'resp' && this.pending) {
+      this.pending.got += dv.byteLength - 1;
+      if (this.pending.progress) this.pending.progress(this.pending.got);
+      this.pending.arm();
+    }
+    if (!(flags & 0x80)) return;
+    const all = new Uint8Array(buf.reduce((n, c) => n + c.length, 0));
+    let o = 0; for (const c of buf) { all.set(c, o); o += c.length; }
+    buf.length = 0;
+    let msg;
+    try { msg = (flags & 0x7f) === 2 ? all.buffer : JSON.parse(new TextDecoder().decode(all)); }
+    catch (e) { msg = { ok: false, err: 'Garbled reply from the logger' }; }
+    if (which === 'stat') { onStatus(msg); return; }
+    if (this.pending) { const p = this.pending; this.pending = null; clearTimeout(p.timer); p.resolve(msg); }
+  },
+  request(cmd, opts) {
+    const run = () => new Promise((resolve, reject) => {
+      if (!this.connected) { reject(new Error('Not connected. Tap Connect at the top.')); return; }
+      const p = { resolve, reject, progress: opts && opts.progress, got: 0, timer: 0 };
+      p.arm = () => { clearTimeout(p.timer); p.timer = setTimeout(() => {
+        if (this.pending === p) { this.pending = null; this.bufs.resp = []; reject(new Error('The logger did not answer. Try again.')); }
+      }, 8000); };
+      this.pending = p; p.arm();
+      Promise.resolve().then(() => this.write(new TextEncoder().encode(cmd))).catch(e => {
+        if (this.pending === p) { this.pending = null; clearTimeout(p.timer); reject(e); }
+      });
+    });
+    const out = this.queue.then(run, run);
+    this.queue = out.catch(() => {});
+    return out;
+  }
+};
+const BLE_CMDS = { '/api/status': 'status', '/api/arm': 'arm', '/api/stop': 'stop', '/api/mark': 'mark', '/api/runs': 'runs',
+  '/api/run': 'get', '/api/delete': 'del' };
+async function bleApi(path, params, opts) {
+  const [p, q] = path.split('?');
+  if (p === '/api/status' && lastStatus) return lastStatus;
+  let cmd = p === '/api/settings' ? (params ? 'set' : 'settings') : BLE_CMDS[p];
+  const query = q || (params ? new URLSearchParams(params).toString() : '');
+  if (query) cmd += '?' + query;
+  const m = await ble.request(cmd, opts);
+  if (m && !(m instanceof ArrayBuffer) && m.ok === false) throw new Error(m.err || 'Logger error');
+  return m;
+}
+function onLinkUp() {
+  toast('Connected to BMX-Logger');
+  loadSettings();
+  if ($('tab-runs').classList.contains('active')) loadRuns();
+}
+function onStatus(s) { if (!s || !s.state) return; lastStatus = s; renderStatus(s); }
+$('bleBtn').onclick = async () => {
+  try {
+    if (ble.dev && !ble.connected) { try { await ble.link(); return; } catch (e) {} }
+    await ble.choose();
+  } catch (e) {
+    // picker closed without choosing: say nothing
+    if (e.name !== 'NotFoundError' && !/cancel/i.test(e.message || '')) toast('Could not connect: ' + e.message);
+  }
+};
+document.addEventListener('visibilitychange', () => { if (!document.hidden && MODE === 'ble' && ble.dev && !ble.connected) ble.retrySoon(200); });
+
+// ---- record tab
+function gearNote() {
+  const ring = +$('ring').value, cog = +$('cog').value;
+  const circ = settings ? settings.wheelCircMm : 1515;
+  if (ring > 0 && cog > 0) {
+    const ratio = ring / cog, roll = circ / 1000 * ratio, gi = circ / Math.PI / 25.4 * ratio;
+    $('rollNote').textContent = `Ratio ${ratio.toFixed(2)} · rollout ${disp.rollout(roll)} · ${gi.toFixed(1)} gear inches`;
+  } else $('rollNote').textContent = '';
+}
+$('ring').oninput = $('cog').oninput = gearNote;
+
+async function poll() {
+  if (MODE !== 'http') return;
+  try {
+    const s = await api('/api/status');
+    lastStatus = s; setConn(true);
+    renderStatus(s);
+  } catch (e) { setConn(false); }
+}
+
+// keep the phone screen on while a run is armed or recording
+let wakeLock = null;
+function keepAwake(on) {
+  try {
+    if (on && !wakeLock && navigator.wakeLock) {
+      wakeLock = 'pending';
+      navigator.wakeLock.request('screen').then(l => { wakeLock = l; }).catch(() => { wakeLock = null; });
+    } else if (!on && wakeLock && wakeLock !== 'pending') { wakeLock.release().catch(() => {}); wakeLock = null; }
+  } catch (e) { wakeLock = null; }
+}
+
+function renderStatus(s) {
+  if (!s) return;
+  {
+    $('st').textContent = s.state; $('st').className = 'pill ' + s.state;
+    $('stInfo').textContent = s.state === 'recording'
+      ? `run #${s.run} · ${Math.round(100 * s.bytes / s.cap)}% of slot` : `${s.used}/${s.slots} slots used`;
+    $('liveSpeed').textContent = disp.speed(s.kmh / 3.6).toFixed(1);
+    $('liveSpeedU').textContent = disp.speedU();
+    $('liveCad').textContent = Math.round(s.crankRpm);
+    $('liveG').textContent = Math.hypot(s.ax, s.ay, s.az).toFixed(2);
+    $('liveTime').textContent = (s.elapsedMs / 1000).toFixed(1);
+    $('liveWp').textContent = s.wheelPulses; $('liveCp').textContent = s.crankPulses;
+    $('liveImu').textContent = s.imu;
+    const rec = s.state === 'recording', busy = s.state !== 'idle';
+    $('armBtn').textContent = rec ? 'Stop' : (busy ? (s.state === 'preparing' ? 'Preparing...' : 'Saving...') : 'Arm');
+    $('armBtn').className = 'btn' + (rec ? ' stop' : '');
+    $('armBtn').disabled = busy && !rec;
+    $('markBtn').style.display = rec ? 'block' : 'none';
+    keepAwake(busy);
+    let err = s.err || '';
+    if (s.imu === 'none') err = err || 'No motion sensor found. Check SDA=GPIO21, SCL=GPIO22 and 3V3 power, then reset the ESP32.';
+    if (s.overflow) err += (err ? ' ' : '') + `${s.overflow} samples dropped (buffer overflow).`;
+    $('recErr').textContent = err;
+  }
+}
+
+$('armBtn').onclick = async () => {
+  $('recErr').textContent = '';
+  try {
+    if (lastStatus && lastStatus.state === 'recording') { await api('/api/stop', {}); }
+    else {
+      await api('/api/arm', { label: $('label').value || '', epoch: Math.floor(Date.now() / 1000), chainring: $('ring').value, cog: $('cog').value });
+      if (settings) { settings.chainring = +$('ring').value; settings.cog = +$('cog').value; }
+    }
+  } catch (e) { $('recErr').textContent = e.message; }
+  poll();
+};
+$('markBtn').onclick = () => api('/api/mark', {}).catch(() => {});
+
+// ---- settings
+async function loadSettings() {
+  if (!online()) return;
+  try {
+    settings = await api('/api/settings');
+    $('sCirc').value = settings.wheelCircMm; $('sWm').value = settings.wheelMagnets; $('sCm').value = settings.crankMagnets;
+    $('sFwd').value = settings.forwardAxis; $('sRate').value = settings.rateHz; $('sAuto').value = settings.autoStopS;
+    if (!$('ring').value) $('ring').value = settings.chainring;
+    if (!$('cog').value) $('cog').value = settings.cog;
+    gearNote();
+  } catch (e) { if (online()) setTimeout(loadSettings, 3000); }
+}
+$('saveSettings').onclick = async () => {
+  $('setErr').textContent = '';
+  try {
+    settings = await api('/api/settings', { wheelCircMm: $('sCirc').value, wheelMagnets: $('sWm').value, crankMagnets: $('sCm').value,
+      forwardAxis: $('sFwd').value, rateHz: $('sRate').value, autoStopS: $('sAuto').value });
+    $('setErr').style.color = 'var(--ok)'; $('setErr').textContent = 'Saved.';
+    gearNote();
+  } catch (e) { $('setErr').style.color = ''; $('setErr').textContent = e.message; }
+};
+$('units').value = disp.units;
+$('splits').value = disp.splits.join(',');
+$('units').onchange = () => { store.set('units', $('units').value); $('splits').value = disp.splits.join(','); gearNote(); invalidate(); };
+$('splits').onchange = () => { store.set('splits_' + disp.units, $('splits').value); invalidate(); };
+function invalidate() { runs.forEach(r => r.res = null); }
+
+// ---- runs
+function fmtDate(epoch) {
+  if (!epoch) return 'no date';
+  const d = new Date(epoch * 1000);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+const selected = new Set(JSON.parse(store.get('sel') || '[]'));
+function saveSel() { store.set('sel', JSON.stringify([...selected])); }
+
+function runRow(key, title, sub, actions) {
+  const div = document.createElement('div'); div.className = 'run';
+  const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = selected.has(key);
+  cb.onchange = () => { cb.checked ? selected.add(key) : selected.delete(key); saveSel(); };
+  const info = document.createElement('div'); info.className = 'info';
+  const b = document.createElement('b'); b.textContent = title;
+  const s = document.createElement('span'); s.className = 'small'; s.textContent = sub;
+  info.append(b, s); div.append(cb, info);
+  for (const [txt, fn] of actions) { const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = txt; btn.onclick = fn; div.append(btn); }
+  return div;
+}
+
+async function loadRuns() {
+  renderFileList();
+  if (!online()) {
+    $('runList').innerHTML = MODE === 'ble' ? '<p class="small">Not connected. Tap Connect at the top.</p>'
+      : MODE === 'file' ? '<p class="small">Bluetooth needs Chrome on Android. You can still open saved .bin files below.</p>'
+      : '<p class="small">Not connected to the logger.</p>';
+    return;
+  }
+  try {
+    deviceRuns = (await api('/api/runs')).sort((a, b) => b.id - a.id);
+    const box = $('runList'); box.innerHTML = '';
+    if (!deviceRuns.length) box.innerHTML = '<p class="small">No runs yet. Arm a run on the Record tab.</p>';
+    for (const r of deviceRuns) {
+      const key = 'dev:' + r.id;
+      const secs = r.bytes / 16 / (r.rateHz || 250);
+      const sub = `${fmtDate(r.epoch)} · ${r.chainring}/${r.cog} · ~${secs.toFixed(0)} s` + (r.closed ? '' : ' · recovered');
+      box.append(runRow(key, `#${r.id} ${r.label || ''}`, sub, [
+        ...(DEMO ? [] : [['Save', () => saveRunFile(key)]]),
+        ['Delete', async ev => {
+          const b = ev.target;
+          if (b.dataset.armed !== '1') { b.dataset.armed = '1'; b.textContent = 'Sure?'; setTimeout(() => { b.dataset.armed = ''; b.textContent = 'Delete'; }, 3000); return; }
+          await api('/api/delete', { id: r.id }).catch(e => toast(e.message));
+          runs.delete(key); selected.delete(key); saveSel(); loadRuns();
+        }]
+      ]));
+    }
+  } catch (e) { $('runList').innerHTML = '<p class="small">Could not reach the logger.</p>'; }
+}
+
+function renderFileList() {
+  const box = $('fileList'); box.innerHTML = '';
+  const files = [...runs.values()].filter(r => r.key.startsWith('file:'));
+  if (!files.length) { box.innerHTML = '<p class="small">None yet.</p>'; return; }
+  for (const r of files) box.append(runRow(r.key, r.title, `${r.run.hdr.chainring}/${r.run.hdr.cog} · ${fmtDate(r.run.hdr.epoch)}`, [
+    ['Remove', () => { runs.delete(r.key); selected.delete(r.key); saveSel(); renderFileList(); }]
+  ]));
+}
+
+$('importFile').onchange = async e => {
+  for (const f of e.target.files) {
+    try {
+      const buf = await f.arrayBuffer(), run = BMX.parseRun(buf), key = 'file:' + f.name;
+      runs.set(key, { key, title: `${f.name} ${run.hdr.label}`, buf, run, res: null });
+      selected.add(key);
+    } catch (err) { toast(f.name + ': ' + err.message); }
+  }
+  saveSel(); renderFileList(); e.target.value = '';
+};
+
+async function getRun(key) {
+  if (runs.has(key)) return runs.get(key);
+  if (!key.startsWith('dev:')) return null;
+  const id = key.slice(4);
+  const info = deviceRuns.find(r => String(r.id) === id);
+  const total = info ? info.bytes + 64 : 0;
+  const progress = MODE === 'ble' && total ? got => toast(`Downloading run #${id}... ${Math.min(100, Math.round(100 * got / total))}%`) : null;
+  const buf = await api('/api/run?id=' + id, null, null, { progress });
+  if (progress) toast(`Run #${id} downloaded`);
+  const run = BMX.parseRun(buf);
+  const entry = { key, title: `#${run.hdr.runId} ${run.hdr.label}`, buf, run, res: null };
+  runs.set(key, entry);
+  return entry;
+}
+
+async function saveRunFile(key) {
+  try {
+    const r = await getRun(key);
+    await saveFile(`bmx_run_${r.run.hdr.runId}.bin`, r.buf, 'application/octet-stream');
+  } catch (e) { toast(e.message); }
+}
+// Browser: download. Android app: write to the app's cache and open the share sheet (Drive, email, Files...).
+async function saveFile(name, data, mime) {
+  if (!NATIVE) { downloadBlob(new Blob([data], { type: mime }), name); return; }
+  const { Filesystem, Share } = BmxNative;
+  let opts;
+  if (typeof data === 'string') opts = { path: name, data, directory: 'CACHE', encoding: 'utf8' };
+  else {
+    const bytes = new Uint8Array(data); let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    opts = { path: name, data: btoa(bin), directory: 'CACHE' };
+  }
+  const { uri } = await Filesystem.writeFile(opts);
+  try { await Share.share({ title: name, files: [uri] }); }
+  catch (e) { if (!/cancel/i.test(e.message || '')) throw e; }
+}
+function downloadBlob(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+$('compareBtn').onclick = () => showTab('analyze');
+
+// ---- analysis view
+let active = [];
+async function renderAnalysis() {
+  active = [];
+  for (const key of selected) {
+    try { const r = await getRun(key); if (r) active.push(r); } catch (e) { selected.delete(key); }
+  }
+  saveSel();
+  $('anaEmpty').style.display = active.length ? 'none' : 'block';
+  $('anaBody').style.display = active.length ? 'block' : 'none';
+  if (!active.length) return;
+  const splitsM = disp.splits.map(x => disp.toMeters(x));
+  active.forEach((r, i) => { if (!r.res) r.res = BMX.analyze(r.run, { splitsM }); r.color = COLORS[i % COLORS.length]; });
+
+  // summary table
+  const S = disp.speedU(), D = disp.distU();
+  const fmt = (x, d) => x == null || !isFinite(x) ? '-' : x.toFixed(d);
+  let html = '<table><tr><th>Run</th><th>Gear</th><th>Rollout</th>' +
+    disp.splits.map(x => `<th>${x} ${D}</th>`).join('') +
+    `<th>Peak ${S}</th><th>at s</th><th>Peak pedal RPM</th><th>Ratio meas.</th><th>Pedaling</th><th>Peak g</th></tr>`;
+  const best = disp.splits.map((_, k) => Math.min(...active.map(r => (r.res.splits && r.res.splits[k].t) || Infinity)));
+  for (const r of active) {
+    const x = r.res, h = r.run.hdr;
+    html += `<tr><td><span style="color:${r.color}">&#9632;</span> ${esc(r.title)}</td><td>${h.chainring}/${h.cog}</td><td>${x.rolloutM ? disp.rollout(x.rolloutM) : '-'}</td>`;
+    disp.splits.forEach((_, k) => {
+      const t = x.splits ? x.splits[k].t : null;
+      const b = active.length > 1 && t != null && t === best[k];
+      html += `<td${b ? ' style="font-weight:700;color:var(--ok)"' : ''}>${fmt(t, 2)}</td>`;
+    });
+    html += `<td>${fmt(x.peakSpeed != null ? disp.speed(x.peakSpeed) : null, 1)}</td><td>${fmt(x.peakT, 1)}</td><td>${fmt(x.peakCadence, 0)}</td>` +
+      `<td>${fmt(x.measuredRatio, 2)}</td><td>${x.pedalPct != null ? fmt(x.pedalPct, 0) + '%' : '-'}</td><td>${fmt(x.peakG, 1)}</td></tr>`;
+  }
+  $('summary').innerHTML = html + '</table>';
+
+  // speed vs distance overlay
+  const sd = active.filter(r => r.res.wheel).map(r => ({
+    x: r.res.wheel.d.map(v => disp.dist(v)), y: r.res.wheel.v.map(v => disp.speed(v)), color: r.color, label: r.title
+  }));
+  chart('sd', { series: sd, xLabel: D, yLabel: S, xMin: 0, yMin: 0, step: true });
+
+  // detail selector
+  const sel = $('detailSel'), prev = sel.value;
+  sel.innerHTML = active.map(r => `<option value="${esc(r.key)}">${esc(r.title)}</option>`).join('');
+  if (active.some(r => r.key === prev)) sel.value = prev;
+  renderDetail();
+}
+$('detailSel').onchange = renderDetail;
+
+function renderDetail() {
+  const r = active.find(x => x.key === $('detailSel').value) || active[0];
+  if (!r) return;
+  const x = r.res, S = disp.speedU();
+  const bands = (x.bands || []).map(b => ({ a: b.a, b: b.b, color: b.state === 'pedal' ? 'var(--pedal)' : 'var(--coast)' }));
+  const tMax = Math.max(x.moveEnd || 0, x.imu ? x.imu.t[x.imu.t.length - 1] : 0);
+  const sc = [];
+  if (x.wheel) sc.push({ x: x.wheel.t, y: x.wheel.v.map(v => disp.speed(v)), color: r.color, label: 'Speed ' + S });
+  if (x.cadence.t.length) sc.push({ x: x.cadence.t, y: x.cadence.rpm.map(v => v / 10), color: 'var(--muted)', label: 'Pedal RPM ÷ 10', dash: true });
+  chart('sc', { series: sc, bands, xLabel: 's', yLabel: S, xMin: 0, xMax: x.moveEnd || tMax, yMin: 0, marks: x.marks,
+    legendExtra: [['var(--pedal)', 'Pedaling'], ['var(--coast)', 'Coasting']], readScale: { 1: 10 } });
+  if (x.imu && x.imu.pitch) chart('pi', { series: [{ x: x.imu.t, y: x.imu.pitch, color: r.color, label: 'Pitch ° (nose up +)' }], bands, xLabel: 's', yLabel: '°', xMin: 0, xMax: x.moveEnd || tMax, zero: true });
+  else chart('pi', { series: [], xLabel: 's', yLabel: '°' });
+  if (x.imu) chart('ag', { series: [{ x: x.imu.t, y: x.imu.g, color: r.color, label: 'Total g-force' }], xLabel: 's', yLabel: 'g', xMin: 0, xMax: x.moveEnd || tMax, yMin: 0 });
+  else chart('ag', { series: [], xLabel: 's', yLabel: 'g' });
+  $('detailWarn').textContent = x.warnings.join(' ');
+  $('csvBtn').hidden = DEMO;
+  $('csvBtn').onclick = () => saveFile(`bmx_run_${r.run.hdr.runId}.csv`, BMX.toCsv(r.run, x), 'text/csv').catch(e => toast(e.message));
+}
+
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+// ---- tiny canvas chart (no libraries, so the app works offline at the track)
+const charts = {};
+function cssVar(c) {
+  if (!c || !c.startsWith('var(')) return c;
+  return getComputedStyle(document.documentElement).getPropertyValue(c.slice(4, -1)).trim();
+}
+function niceStep(range, target) {
+  const raw = range / target, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+}
+function chart(id, spec) { charts[id] = spec; drawChart(id); }
+function drawChart(id, cursorX) {
+  const spec = charts[id], cv = $('c-' + id); if (!spec || !cv || !cv.offsetWidth) return;
+  const dpr = window.devicePixelRatio || 1, W = cv.offsetWidth, H = cv.offsetHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const L = 40, R = 10, T = 8, B = 26, pw = W - L - R, ph = H - T - B;
+  const ser = spec.series.filter(s => s.x.length);
+  let x0 = spec.xMin, x1 = spec.xMax, y0 = spec.yMin, y1 = spec.yMax;
+  const xs = ser.flatMap(s => [Math.min(...s.x), Math.max(...s.x)]);
+  if (x0 == null) x0 = xs.length ? Math.min(...xs) : 0;
+  if (x1 == null) x1 = xs.length ? Math.max(...xs) : 1;
+  let ymin = Infinity, ymax = -Infinity;
+  for (const s of ser) for (let i = 0; i < s.x.length; i++) if (s.x[i] >= x0 && s.x[i] <= x1) { ymin = Math.min(ymin, s.y[i]); ymax = Math.max(ymax, s.y[i]); }
+  if (!isFinite(ymin)) { ymin = 0; ymax = 1; }
+  if (y0 == null) y0 = ymin; if (y1 == null) y1 = ymax;
+  if (spec.zero) { y0 = Math.min(y0, 0); y1 = Math.max(y1, 0); }
+  if (y1 - y0 < 1e-6) y1 = y0 + 1;
+  if (x1 - x0 < 1e-6) x1 = x0 + 1;
+  const ys = niceStep(y1 - y0, 4); y0 = Math.floor(y0 / ys) * ys; y1 = Math.ceil(y1 / ys) * ys;
+  const X = v => L + (v - x0) / (x1 - x0) * pw, Y = v => T + ph - (v - y0) / (y1 - y0) * ph;
+  const ink = cssVar('var(--muted)'), grid = cssVar('var(--grid)');
+  g.font = '11px system-ui,sans-serif'; g.fillStyle = ink; g.strokeStyle = grid; g.lineWidth = 1;
+  for (const b of spec.bands || []) { if (b.b < x0 || b.a > x1) continue; g.fillStyle = cssVar(b.color); g.fillRect(X(Math.max(b.a, x0)), T, X(Math.min(b.b, x1)) - X(Math.max(b.a, x0)), ph); }
+  g.fillStyle = ink; g.textAlign = 'right'; g.textBaseline = 'middle';
+  for (let v = y0; v <= y1 + ys / 2; v += ys) { g.beginPath(); g.moveTo(L, Y(v)); g.lineTo(L + pw, Y(v)); g.stroke(); g.fillText(+v.toFixed(6), L - 6, Y(v)); }
+  const xsStep = niceStep(x1 - x0, 5);
+  g.textAlign = 'center'; g.textBaseline = 'top';
+  for (let v = Math.ceil(x0 / xsStep) * xsStep; v <= x1 + 1e-9; v += xsStep) g.fillText(+v.toFixed(6), X(v), T + ph + 6);
+  g.textAlign = 'right'; g.fillText(spec.xLabel || '', L + pw, T + ph + 6 + 0);
+  g.save(); g.beginPath(); g.rect(L, T, pw, ph); g.clip();
+  for (const m of spec.marks || []) { g.strokeStyle = ink; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(m), T); g.lineTo(X(m), T + ph); g.stroke(); g.setLineDash([]); }
+  for (const s of ser) {
+    g.strokeStyle = cssVar(s.color); g.lineWidth = 1.75; g.setLineDash(s.dash ? [5, 4] : []);
+    g.beginPath();
+    let started = false, lastPx = -1, mn = 0, mx = 0;
+    const n = s.x.length, dense = n > pw * 2;
+    for (let i = 0; i < n; i++) {
+      const px = X(s.x[i]), py = Y(s.y[i]);
+      if (!dense) { if (!started) { g.moveTo(px, py); started = true; } else if (spec.step) { g.lineTo(px, py); } else g.lineTo(px, py); continue; }
+      const col = Math.round(px);
+      if (col !== lastPx) { if (started) { g.lineTo(lastPx, mn); g.lineTo(lastPx, mx); } else { g.moveTo(px, py); started = true; } lastPx = col; mn = mx = py; }
+      else { mn = Math.min(mn, py); mx = Math.max(mx, py); }
+    }
+    g.stroke(); g.setLineDash([]);
+  }
+  g.restore();
+  // cursor + readout
+  const ro = $('ro-' + id);
+  if (cursorX != null && ser.length) {
+    const xv = x0 + (cursorX - L) / pw * (x1 - x0);
+    g.strokeStyle = cssVar('var(--ink)'); g.beginPath(); g.moveTo(X(xv), T); g.lineTo(X(xv), T + ph); g.stroke();
+    const parts = [`${xv.toFixed(2)} ${spec.xLabel}`];
+    ser.forEach((s, k) => {
+      let lo = 0, hi = s.x.length - 1;
+      while (hi - lo > 1) { const m = (lo + hi) >> 1; if (s.x[m] <= xv) lo = m; else hi = m; }
+      const i = Math.abs(s.x[hi] - xv) < Math.abs(s.x[lo] - xv) ? hi : lo;
+      const scale = spec.readScale && spec.readScale[k] || 1;
+      parts.push(`${s.label.replace(' ÷ 10', '')}: ${(s.y[i] * scale).toFixed(scale > 1 ? 0 : 2)}`);
+    });
+    ro.textContent = parts.join(' · ');
+  } else if (ro) ro.textContent = 'Tap or drag the chart to read values';
+  const lg = $('lg-' + id);
+  if (lg) lg.innerHTML = ser.map(s => `<span><i style="background:${s.color}"></i>${esc(s.label)}</span>`).join('') +
+    (spec.legendExtra || []).map(([c, t]) => `<span><i class="band" style="background:${c}"></i>${t}</span>`).join('');
+  if (!ser.length && lg) lg.innerHTML = '<span>No data</span>';
+}
+['sd', 'sc', 'pi', 'ag'].forEach(id => {
+  const cv = $('c-' + id);
+  const at = e => { const r = cv.getBoundingClientRect(); const p = e.touches ? e.touches[0] : e; drawChart(id, p.clientX - r.left); };
+  cv.addEventListener('pointerdown', at); cv.addEventListener('pointermove', e => { if (e.buttons || e.pointerType === 'touch') at(e); });
+});
+window.addEventListener('resize', () => Object.keys(charts).forEach(id => drawChart(id)));
+
+// ---- start
+setConn(false);
+if (MODE === 'http') { loadSettings(); poll(); setInterval(poll, 500); }
+else {
+  $('ring').value = 44; $('cog').value = 16; gearNote();
+  if (NATIVE) {
+    const id = store.get('bleId');
+    if (id) { ble.dev = { id }; ble.retrySoon(100); }   // connect to the remembered logger, no picker
+  } else if (MODE === 'ble' && navigator.bluetooth.getDevices) {
+    // reconnect to a logger chosen before, without the picker, where Chrome allows it
+    navigator.bluetooth.getDevices().then(list => {
+      const d = list.find(x => x.name === 'BMX-Logger');
+      if (d) { ble.dev = d; ble.watch(); ble.retrySoon(100); }
+    }).catch(() => {});
+  }
+}
+if (!DEMO && !NATIVE && location.protocol === 'https:') {
+  const l = document.createElement('link'); l.rel = 'manifest'; l.href = 'manifest.webmanifest'; document.head.append(l);
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>

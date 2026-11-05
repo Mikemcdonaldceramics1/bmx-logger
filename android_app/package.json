@@ -1,0 +1,20 @@
+{
+  "name": "bmx-logger-android",
+  "private": true,
+  "version": "1.0.0",
+  "description": "BMX Logger Android app: the phone app wrapped with Capacitor, using native Bluetooth",
+  "scripts": {
+    "build": "node scripts/build-www.mjs && esbuild src/native.js --bundle --format=iife --target=es2020 --minify --outfile=www/native.js"
+  },
+  "dependencies": {
+    "@capacitor-community/bluetooth-le": "8.3.0",
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/share": "8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3",
+    "esbuild": "0.25.0"
+  }
+}

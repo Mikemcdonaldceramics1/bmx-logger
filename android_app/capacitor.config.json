@@ -1,0 +1,8 @@
+{
+  "appId": "com.bmxlogger.app",
+  "appName": "BMX Logger",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  }
+}
