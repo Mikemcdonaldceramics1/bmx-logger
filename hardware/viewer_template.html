@@ -1,0 +1,243 @@
+<title>Chainstay Sensor Clip</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: a workshop spec sheet. The turntable view leads; specs and print notes sit beside it on wide screens, below on phones. */
+:root{
+  --bg:#eef0f2; --panel:#ffffff; --ink:#15181c; --muted:#5a626c; --line:#d5dae0;
+  --accent:#e4572e; --steel:#59606a; --stage:#f7f8f9; --grid:rgba(21,24,28,.06);
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#111417; --panel:#191d21; --ink:#e9ecef; --muted:#9aa3ad; --line:#2a3036;
+  --accent:#ff6a3d; --steel:#7d8590; --stage:#14181b; --grid:rgba(233,236,239,.05); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111417; --panel:#191d21; --ink:#e9ecef; --muted:#9aa3ad; --line:#2a3036;
+  --accent:#ff6a3d; --steel:#7d8590; --stage:#14181b; --grid:rgba(233,236,239,.05); color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+.wrap{max-width:1120px;margin:0 auto}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;margin-bottom:14px}
+h1{font-size:clamp(22px,4vw,30px);line-height:1.15;margin:0;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+.tag{font:500 12px var(--mono);color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.lede{margin:0 0 18px;color:var(--muted);max-width:68ch}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start}
+@media (max-width:900px){.grid{grid-template-columns:minmax(0,1fr)}}
+.stage{background:var(--stage);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.view{position:relative}
+canvas{display:block;width:100%;aspect-ratio:4/3;touch-action:none;cursor:grab}
+canvas:active{cursor:grabbing}
+.hint{position:absolute;left:12px;bottom:10px;font:12px var(--mono);color:var(--muted);pointer-events:none}
+.pulse{position:absolute;right:12px;top:10px;font:500 12px var(--mono);padding:4px 10px;border-radius:99px;
+  background:var(--panel);border:1px solid var(--line);color:var(--muted);transition:background .12s,color .12s}
+.pulse.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.controls{display:flex;flex-wrap:wrap;gap:8px;padding:12px;border-top:1px solid var(--line);background:var(--panel)}
+.controls button{font:500 13px var(--sans);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer}
+.controls button[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.controls button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sep{flex-basis:100%;height:0}
+aside{display:flex;flex-direction:column;gap:14px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.card h2{font:600 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px;margin:0;font-size:14px}
+dt{color:var(--muted)} dd{margin:0;font:500 14px var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+ol,ul{margin:0;padding-left:20px;font-size:14px} li+li{margin-top:5px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.note{font-size:13px;color:var(--muted);margin:8px 0 0}
+code{font:13px var(--mono)}
+@media (prefers-reduced-motion:reduce){.pulse{transition:none}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Chainstay Sensor Clip</h1>
+    <span class="tag">A3144 hall sensor · 19 mm stay · PETG</span>
+  </header>
+  <p class="lede">A snap-on C-clip holds the heat-shrunk sensor in a channel, with 1.2 mm of plastic between its printed face and the spoke magnet. The cable leaves out the back and is zip-tied along the stay.</p>
+
+  <div class="grid">
+    <section class="stage" aria-label="3D view of the clip on the chainstay">
+      <div class="view">
+        <canvas id="cv" role="img" aria-label="Orange clip snapped on a steel chainstay, black sensor in its channel, magnet on a spoke passing 4 mm away"></canvas>
+        <span class="pulse" id="pulse">no magnet</span>
+        <span class="hint">Drag to turn · pinch or scroll to zoom</span>
+      </div>
+      <div class="controls">
+        <button type="button" id="v-three">3/4 view</button>
+        <button type="button" id="v-end">End on</button>
+        <button type="button" id="v-wheel">From the wheel</button>
+        <button type="button" id="v-top">Top</button>
+        <span class="sep"></span>
+        <button type="button" id="t-xray" aria-pressed="false">See inside</button>
+        <button type="button" id="t-tube" aria-pressed="true">Chainstay</button>
+        <button type="button" id="t-spin" aria-pressed="true">Spin wheel</button>
+      </div>
+    </section>
+
+    <aside>
+      <div class="card">
+        <h2>Fit</h2>
+        <dl id="dims"></dl>
+        <p class="note">Measure the stay where the clip sits. For an oval stay, use the narrow width and generate a clip for that size.</p>
+      </div>
+      <div class="card">
+        <h2>Parts in the view</h2>
+        <div class="legend">
+          <span><i style="background:var(--accent)"></i>Clip (printed)</span>
+          <span><i style="background:#26282c"></i>Sensor + heat shrink</span>
+          <span><i style="background:#c9ccd1"></i>Magnet</span>
+          <span><i style="background:var(--steel)"></i>Chainstay</span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Print</h2>
+        <ul>
+          <li>PETG or ABS. PLA works but gets brittle and creeps in the sun.</li>
+          <li>Stand it up: the C shape flat on the bed, 14 mm tall. Every layer is a full C, so it flexes without splitting.</li>
+          <li>0.2 mm layers, 4 walls, 40% infill. No supports; the end stop bridges 6.6 mm.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>Fit the sensor</h2>
+        <ol>
+          <li>Solder the cable to the A3144 legs, heat-shrink each joint, then one sleeve over the whole thing.</li>
+          <li>Slide it in from the back, printed face toward the wheel, until it stops.</li>
+          <li>Snap the clip on so the channel points at the magnet path. Set a 3 to 5 mm gap.</li>
+          <li>A drop of CA glue or a zip-tie through the stay keeps it from rotating.</li>
+        </ol>
+        <p class="note">The A3144 only switches for the magnet's south pole facing its printed side. No pulses in the app? Flip the magnet.</p>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+const SCENE = /*SCENE*/null;
+(() => {
+  const cv = document.getElementById('cv'), g = cv.getContext('2d');
+  const D = SCENE.dims;
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const hex = s => { s = s.replace('#', ''); return [0, 2, 4].map(i => parseInt(s.slice(i, i + 2), 16)); };
+
+  // dims panel
+  const rows = [['Stay diameter', D.tube + ' mm'], ['Clip bore', D.bore + ' mm'], ['Snap opening', D.gap_chord + ' mm'],
+    ['Clip outside', D.outer + ' mm'], ['Clip length', D.width + ' mm'], ['Sensor channel', D.channel[0] + ' × ' + D.channel[1] + ' mm'],
+    ['Sensing wall', D.face + ' mm'], ['Magnet gap', '3 to 5 mm']];
+  document.getElementById('dims').innerHTML = rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+
+  // parts: flat coordinate arrays -> Float32Array
+  const parts = {};
+  for (const k in SCENE.parts) parts[k] = new Float32Array(SCENE.parts[k]);
+  const moving = { magnet: 1, spoke: 1 };
+  let show = { tube: true }, xray = false, spin = true;
+  const color = () => ({
+    clip: hex(css('--accent')), tube: hex(css('--steel')), sensor: [38, 40, 44], shrink: [26, 27, 30],
+    cable: [36, 38, 42], tie: [20, 21, 24], magnet: [201, 204, 209], spoke: [182, 186, 192]
+  });
+
+  // camera
+  let yaw = -0.75, pitch = 0.42, zoom = 1, target = { yaw, pitch };
+  const views = { 'v-three': [-0.75, 0.42], 'v-end': [0, 0.08], 'v-wheel': [-Math.PI / 2, 0.05], 'v-top': [-0.2, 1.45] };
+  for (const id in views) document.getElementById(id).onclick = () => { [target.yaw, target.pitch] = views[id]; };
+  const tog = (id, fn) => { const b = document.getElementById(id); b.onclick = () => { const on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', on); fn(on); }; };
+  tog('t-xray', on => xray = on); tog('t-tube', on => show.tube = on); tog('t-spin', on => spin = on);
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { spin = false; document.getElementById('t-spin').setAttribute('aria-pressed', 'false'); }
+
+  // pointer: drag to turn, wheel / pinch to zoom
+  const pts = new Map(); let pinch0 = 0, zoom0 = 1;
+  cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]); if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch0 = Math.hypot(a[0] - b[0], a[1] - b[1]); zoom0 = zoom; } });
+  cv.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return;
+    const p = pts.get(e.pointerId), dx = e.clientX - p[0], dy = e.clientY - p[1];
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.size === 1) { target.yaw += dx * 0.01; target.pitch = Math.max(-1.5, Math.min(1.5, target.pitch + dy * 0.01)); }
+    else if (pts.size === 2) { const [a, b] = [...pts.values()]; zoom = Math.max(0.5, Math.min(4, zoom0 * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch0)); }
+  });
+  const up = e => pts.delete(e.pointerId);
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+  cv.addEventListener('wheel', e => { e.preventDefault(); zoom = Math.max(0.5, Math.min(4, zoom * Math.exp(-e.deltaY * 0.0015))); }, { passive: false });
+  cv.addEventListener('dblclick', () => { [target.yaw, target.pitch] = views['v-three']; zoom = 1; });
+
+  // render: transform, cull, shade, sort, fill (painter's algorithm)
+  const L = (() => { const v = [-0.45, 0.75, 0.5]; const l = Math.hypot(...v); return v.map(x => x / l); })();
+  let t0 = performance.now(), phase = 0, W = 0, H = 0, dpr = 1;
+  function resize() { dpr = Math.min(2, window.devicePixelRatio || 1); W = cv.clientWidth; H = cv.clientHeight; cv.width = W * dpr; cv.height = H * dpr; }
+  window.addEventListener('resize', resize); resize();
+
+  function frame(now) {
+    const dt = Math.min(0.05, (now - t0) / 1000); t0 = now;
+    yaw += (target.yaw - yaw) * Math.min(1, dt * 8); pitch += (target.pitch - pitch) * Math.min(1, dt * 8);
+    if (spin) phase += dt * 1.4;
+    const my = Math.sin(phase) * 30;                    // magnet sweeps past the sensor along Y
+    const near = Math.abs(my) < 5;
+    const pill = document.getElementById('pulse');
+    pill.classList.toggle('on', near); pill.textContent = near ? 'pulse' : 'no magnet';
+
+    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const scale = Math.min(W, H) / 78 * zoom, dist = 260, cxo = W / 2, cyo = H / 2;
+    const ctr = [8, 0, -6];
+    const tf = (x, y, z) => {                           // world -> view
+      x -= ctr[0]; y -= ctr[1]; z -= ctr[2];
+      const x1 = cy * x - sy * z, z1 = sy * x + cy * z;
+      const y2 = cp * y - sp * z1, z2 = sp * y + cp * z1;
+      return [x1, y2, z2];
+    };
+    const proj = v => { const f = dist / (dist + v[2]); return [cxo + v[0] * scale * f, cyo - v[1] * scale * f]; };
+    const C = color(), polys = [];
+    for (const name in parts) {
+      if (name === 'tube' && !show.tube) continue;
+      const a = parts[name], dy = moving[name] ? my : 0;
+      const alpha = (name === 'clip' && xray) ? 0.28 : 1, both = alpha < 1;
+      const col = C[name];
+      for (let i = 0; i < a.length; i += 9) {
+        const p0 = tf(a[i], a[i + 1] + dy, a[i + 2]), p1 = tf(a[i + 3], a[i + 4] + dy, a[i + 5]), p2 = tf(a[i + 6], a[i + 7] + dy, a[i + 8]);
+        const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2], vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+        let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+        if (nz > 0 && !both) continue;                  // facing away (view looks down +z)
+        const s = nz > 0 ? -1 : 1;
+        const lam = Math.max(0, s * (nx * L[0] + ny * L[1] - nz * L[2]));
+        const spec = Math.pow(Math.max(0, s * -nz), 24) * 0.18;
+        const k = 0.42 + 0.58 * lam;
+        const rgb = col.map(c => Math.min(255, Math.round(c * k + 255 * spec)));
+        polys.push([(p0[2] + p1[2] + p2[2]) / 3, proj(p0), proj(p1), proj(p2), rgb, alpha]);
+      }
+    }
+    polys.sort((A, B) => B[0] - A[0]);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    // faint grid on the stage
+    g.strokeStyle = css('--grid'); g.lineWidth = 1;
+    for (let x = (W % 24) / 2; x < W; x += 24) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+    for (let y = (H % 24) / 2; y < H; y += 24) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+    g.lineJoin = 'round';
+    for (const [, a, b, c, rgb, al] of polys) {
+      const f = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${al})`;
+      g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.lineTo(c[0], c[1]); g.closePath();
+      g.fillStyle = f; g.fill();
+      if (al === 1) { g.strokeStyle = f; g.lineWidth = 0.7; g.stroke(); }
+    }
+    // callouts
+    const ink = css('--ink'), muted = css('--muted');
+    const label = (wx, wy, wz, dx, dy, text) => {
+      const p = proj(tf(wx, wy, wz)), q = [p[0] + dx, p[1] + dy];
+      g.strokeStyle = muted; g.lineWidth = 1; g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke();
+      g.fillStyle = ink; g.beginPath(); g.arc(p[0], p[1], 2.2, 0, 7); g.fill();
+      g.font = '500 12px "IBM Plex Mono", ui-monospace, monospace';
+      const w = g.measureText(text).width;
+      let x = dx < 0 ? q[0] - 4 - w : q[0] + 4;          // keep the label inside the view
+      x = Math.max(6, Math.min(W - 6 - w, x));
+      g.textAlign = 'left'; g.fillText(text, x, q[1] + 4);
+    };
+    label(D.face_x, 3.5, 2, 34, 44, `sensing wall ${D.face} mm`);
+    label(0, -D.bore / 2 - 1, D.width / 2, -40, 44, `snap opening ${D.gap_chord} mm`);
+    label(D.face_x + 5.5, my + 4, 0, -56, -28, 'magnet, south pole in');
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
