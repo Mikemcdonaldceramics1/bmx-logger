@@ -56,6 +56,14 @@ if (!g.includes('signingConfigs')) {
 }
 writeFileSync(gradlePath, g);
 
+// 2c. Download Gradle from Gradle's own servers (GitHub's release file host has had outages)
+const wrapper = join(app, 'android', 'gradle', 'wrapper', 'gradle-wrapper.properties');
+if (existsSync(wrapper)) {
+  let w = readFileSync(wrapper, 'utf8');
+  w = w.replace(/distributionUrl=.*gradle-([\d.]+)-(all|bin)\.zip/, (m, v) => `distributionUrl=https\\://services.gradle.org/distributions/gradle-${v}-bin.zip`);
+  writeFileSync(wrapper, w);
+}
+
 // 3. Icons and splash: copy our images over the template's, and drop the adaptive icon so ours is used
 const res = join(main, 'res');
 cpSync(join(app, 'resources', 'res'), res, { recursive: true });

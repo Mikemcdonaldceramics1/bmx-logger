@@ -57,9 +57,24 @@ jobs:
           node scripts/patch-android.mjs
           npx cap sync android
 
+      # Keep Gradle and its downloads between builds, so a download outage can't stop a build
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/wrapper/dists
+            ~/.gradle/caches
+          key: gradle-${{ hashFiles('android_app/package.json') }}
+          restore-keys: gradle-
+
       - name: Build the APK
         working-directory: android_app/android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: |
+          # retry: downloads (Gradle, Maven) occasionally fail for a minute
+          for i in 1 2 3 4 5; do
+            ./gradlew assembleDebug --no-daemon --stacktrace && exit 0
+            echo "Build attempt $i failed, retrying in 60 s"; sleep 60
+          done
+          exit 1
 
       - name: Name the APK
         run: cp android_app/android/app/build/outputs/apk/debug/app-debug.apk bmx-logger.apk
