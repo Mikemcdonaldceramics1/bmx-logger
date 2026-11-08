@@ -22,8 +22,7 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--card)}
-header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;display:flex;align-items:center;gap:10px;padding-block:12px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:var(--card);border-bottom:1px solid var(--line)}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;padding-top:calc(12px + env(safe-area-inset-top,0px));padding-bottom:12px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:var(--card);border-bottom:1px solid var(--line)}
 .hbtn{border:0;border-radius:99px;background:var(--accent);color:var(--accent-ink);font:700 14px system-ui,sans-serif;padding:8px 16px}
 .hbtn:disabled{opacity:.5}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(72px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:10px;font-size:13px;max-width:calc(100% - 32px);z-index:20}
@@ -712,8 +711,12 @@ function renderStatus(s) {
     $('liveWp').textContent = s.wheelPulses; $('liveCp').textContent = s.crankPulses;
     $('liveImu').textContent = s.imu;
     const bp = s.battPct;
-    $('batt').hidden = !(bp >= 0);
-    if (bp >= 0) {
+    $('batt').hidden = false;
+    if (!(bp >= 0)) {
+      $('batt').textContent = 'Batt --';
+      $('batt').title = 'No battery reading: wire the 100k/100k divider to D35 and flash the latest firmware';
+      $('batt').className = 'batt';
+    } else {
       $('batt').textContent = `Battery ${bp}%`;
       $('batt').title = `${(+s.batt).toFixed(2)} V`;
       $('batt').className = 'batt' + (bp <= 10 ? ' crit' : bp <= 25 ? ' low' : '');
