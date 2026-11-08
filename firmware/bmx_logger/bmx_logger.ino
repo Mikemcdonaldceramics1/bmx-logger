@@ -11,6 +11,9 @@
   - Timestamps every wheel and crank magnet pulse in an interrupt.
   - Records runs into pre-erased flash "slots" so writes never stall sampling
     for long (no filesystem, no SD card).
+  - Armed mode waits for the gate start: it keeps the last 3 s in RAM and starts saving when the
+    wheel reaches the launch speed soon after standing still, then stops when the wheel stops and
+    arms again for the next moto (see launch_detect.h; all adjustable in the app's Settings).
   - Talks to the phone app over Bluetooth Low Energy (Chrome on Android). No Wi-Fi: the radio
     stays off, which saves power and avoids the start-up current spike.
 
@@ -29,6 +32,7 @@
 #include <Wire.h>
 #include <NimBLEDevice.h>
 #include "ble_proto.h"
+#include "launch_detect.h"
 #include <Preferences.h>
 #include "esp_partition.h"
 #include "esp_timer.h"
@@ -54,7 +58,10 @@ static const uint32_t WHEEL_LOCKOUT_US = 5000;   // ignore wheel pulses closer t
 
 enum RecType : uint32_t { REC_IMU = 0, REC_WHEEL = 1, REC_CRANK = 2, REC_MARK = 3 };
 enum ImuType : uint8_t  { IMU_NONE = 0, IMU_MPU6050 = 1, IMU_LSM6DSO32 = 2 };
-enum State   : uint8_t  { ST_IDLE = 0, ST_PREPARING, ST_RECORDING, ST_FINISHING };
+// IDLE -> PREPARING (erase a slot) -> ARMED (waiting for the start, last 3 s kept in RAM)
+//      -> RECORDING -> FINISHING (save) -> PREPARING again when re-arm is on, else IDLE.
+// DISCARD = disarmed before a start: the unused slot is wiped.
+enum State   : uint8_t  { ST_IDLE = 0, ST_PREPARING, ST_RECORDING, ST_FINISHING, ST_ARMED, ST_DISCARD };
 
 struct __attribute__((packed)) RunHeader {
   uint32_t magic;
@@ -94,8 +101,16 @@ struct Settings {
   uint8_t  cog = 16;
   uint8_t  forwardAxis = 0;
   uint16_t rateHz = 250;
-  uint8_t  autoStopS = 5;        // stop when wheel idle this long (0 = off)
+  uint8_t  autoStopS = 3;        // stop when the wheel has been still this long after a start (0 = off)
+  uint8_t  trigMode = 0;         // 0 = start on launch, 1 = start right away when armed
+  uint16_t launchDkmh = 120;     // launch: wheel speed that counts as the start, in 0.1 km/h
+  uint8_t  stillS = 2;           // launch: bike must stand still this long first (0 = speed only)
+  uint8_t  maxRunS = 60;         // stop after this long even if the wheel keeps turning
+  uint8_t  rearm = 1;            // after saving a run, arm again for the next start
 } cfg;
+
+static const uint32_t PRE_US = 3000000;        // keep this much from before the start
+static const uint32_t LAUNCH_WINDOW_US = 4000000;
 
 // ------------------------------------------------------------------ globals
 Preferences prefs;
@@ -103,6 +118,9 @@ Preferences prefs;
 static volatile uint8_t gState = ST_IDLE;
 static volatile bool    gStopReq = false;
 static volatile bool    gMarkReq = false;
+static volatile bool    gNoRearm = false;      // set when someone stops a run by hand
+static volatile bool    gArmReset = false;     // writer -> sampler: a new arming has begun
+static volatile bool    gTriggered = false;    // sampler -> writer: start detected, write the run's date
 
 static ImuType imuType = IMU_NONE;
 static uint8_t imuAddr = 0;
@@ -127,8 +145,19 @@ static volatile uint32_t bytesWritten = 0;
 static volatile uint32_t overflowCount = 0;
 static volatile uint32_t runWheelPulses = 0;
 static volatile uint32_t runCrankPulses = 0;
+static volatile uint32_t runTrigUs = 0;       // when the start was detected
+static volatile uint32_t trigMs = 0;
+static volatile uint32_t armedSinceMs = 0;
+static volatile uint32_t runsThisArm = 0;
 static char pendingLabel[20];
-static uint32_t pendingEpoch = 0;
+static uint32_t armEpoch = 0, armMs = 0;       // phone clock at arming, to date each run
+
+// Rolling buffer of the last few seconds while armed, so a run includes the moments before the start.
+struct PreRec { uint32_t t; uint8_t type; int16_t v[6]; };
+static const uint32_t PRE_N = 2048;            // > 3 s at 500 Hz plus pulses
+static PreRec preBuf[PRE_N];
+static uint32_t preHead = 0, preCount = 0;
+static bmxtrig::LaunchDetector launch;
 static String lastError;
 
 // ------------------------------------------------------------------ pulses (ISR)
@@ -279,7 +308,12 @@ static void loadSettings() {
   cfg.cog          = prefs.getUChar("cog", cfg.cog);
   cfg.forwardAxis  = prefs.getUChar("fwd", cfg.forwardAxis);
   cfg.rateHz       = prefs.getUShort("rate", cfg.rateHz);
-  cfg.autoStopS    = prefs.getUChar("astop", cfg.autoStopS);
+  cfg.autoStopS    = prefs.getUChar("astop2", cfg.autoStopS);
+  cfg.trigMode     = prefs.getUChar("tmode", cfg.trigMode);
+  cfg.launchDkmh   = prefs.getUShort("tdkmh", cfg.launchDkmh);
+  cfg.stillS       = prefs.getUChar("still", cfg.stillS);
+  cfg.maxRunS      = prefs.getUChar("maxrun", cfg.maxRunS);
+  cfg.rearm        = prefs.getUChar("rearm", cfg.rearm);
   prefs.end();
   if (cfg.rateHz < 100 || cfg.rateHz > 500) cfg.rateHz = 250;
   if (cfg.wheelMagnets < 1) cfg.wheelMagnets = 1;
@@ -295,7 +329,12 @@ static void saveSettings() {
   prefs.putUChar("cog", cfg.cog);
   prefs.putUChar("fwd", cfg.forwardAxis);
   prefs.putUShort("rate", cfg.rateHz);
-  prefs.putUChar("astop", cfg.autoStopS);
+  prefs.putUChar("astop2", cfg.autoStopS);
+  prefs.putUChar("tmode", cfg.trigMode);
+  prefs.putUShort("tdkmh", cfg.launchDkmh);
+  prefs.putUChar("still", cfg.stillS);
+  prefs.putUChar("maxrun", cfg.maxRunS);
+  prefs.putUChar("rearm", cfg.rearm);
   prefs.end();
 }
 
@@ -349,6 +388,33 @@ static void drainPulses(PulseRing& p, RecType type, bool record, uint32_t start)
   }
 }
 
+static inline void preAdd(uint32_t t, RecType type, const int16_t* v) {
+  PreRec& r = preBuf[preHead];
+  r.t = t; r.type = type;
+  for (int i = 0; i < 6; i++) r.v[i] = v ? v[i] : 0;
+  preHead = (preHead + 1) % PRE_N;
+  if (preCount < PRE_N) preCount++;
+}
+
+// The start: keep what happened in the last `pre` microseconds, then record live.
+static void startRun(uint32_t trigAt, uint32_t pre) {
+  runStartUs = trigAt - pre;
+  runTrigUs = trigAt;
+  uint32_t i = (preHead + PRE_N - preCount) % PRE_N;
+  for (uint32_t k = 0; k < preCount; k++, i = (i + 1) % PRE_N) {
+    const PreRec& r = preBuf[i];
+    int32_t rel = (int32_t)(r.t - runStartUs);
+    if (rel < 0) continue;
+    pushRec((uint32_t)rel, (RecType)r.type, r.type == REC_IMU ? r.v : nullptr);
+    if (r.type == REC_WHEEL) runWheelPulses = runWheelPulses + 1;
+    else if (r.type == REC_CRANK) runCrankPulses = runCrankPulses + 1;
+  }
+  preCount = 0;
+  trigMs = millis();
+  gTriggered = true;
+  gState = ST_RECORDING;
+}
+
 static void samplerLoop(void*) {
   int16_t v[6];
   for (;;) {
@@ -363,8 +429,34 @@ static void samplerLoop(void*) {
       if (++errRun >= 25) { errRun = 0; vTaskDelay(pdMS_TO_TICKS(50)); }   // let other tasks run
     }
     if (ok) errRun = 0;
+    uint8_t st = gState;
 
-    if (gState != ST_RECORDING) {
+    if (st == ST_ARMED) {
+      if (gArmReset) { gArmReset = false; preCount = 0; launch.reset(now); }
+      bmxtrig::Config tc;
+      tc.metersPerPulse = cfg.wheelCircMm / 1000.0f / cfg.wheelMagnets;
+      tc.launchKmh = cfg.launchDkmh / 10.0f;
+      tc.stillUs = (uint32_t)cfg.stillS * 1000000UL;
+      tc.windowUs = LAUNCH_WINDOW_US;
+      bool trig = false;
+      uint32_t trigAt = now;
+      uint32_t head = wheelP.head;
+      while (wheelP.tail != head) {
+        uint32_t t = wheelP.t[wheelP.tail & 63]; wheelP.tail++;
+        preAdd(t, REC_WHEEL, nullptr);
+        if (!trig && cfg.trigMode == 0 && launch.onWheelPulse(t, tc)) { trig = true; trigAt = t; }
+      }
+      head = crankP.head;
+      while (crankP.tail != head) { uint32_t t = crankP.t[crankP.tail & 63]; crankP.tail++; preAdd(t, REC_CRANK, nullptr); }
+      if (ok) preAdd(now, REC_IMU, v);
+      gMarkReq = false;
+      if (gStopReq) { gStopReq = false; gState = ST_DISCARD; continue; }   // disarmed before a start
+      if (cfg.trigMode == 1) startRun(now, 0);
+      else if (trig) startRun(trigAt, PRE_US);
+      continue;
+    }
+
+    if (st != ST_RECORDING) {
       drainPulses(wheelP, REC_WHEEL, false, 0);
       drainPulses(crankP, REC_CRANK, false, 0);
       gMarkReq = false;
@@ -374,13 +466,15 @@ static void samplerLoop(void*) {
     uint32_t start = runStartUs;
     drainPulses(wheelP, REC_WHEEL, true, start);
     drainPulses(crankP, REC_CRANK, true, start);
-    uint32_t rel = now - start;
+    uint32_t rel = now - start, sinceTrig = now - runTrigUs;
     if (gMarkReq) { gMarkReq = false; pushRec(rel, REC_MARK, nullptr); }
     if (ok) pushRec(rel, REC_IMU, v);
 
-    bool stop = gStopReq;
+    bool stop = false;
+    if (gStopReq) { stop = true; gNoRearm = true; }                           // stopped by hand
     if (bytesQueued + 64 * REC_SIZE >= SLOT_SIZE - HEADER_SIZE) stop = true;   // slot full
-    if (cfg.autoStopS && runWheelPulses >= 10 && rel > 3000000UL &&
+    if (cfg.maxRunS && sinceTrig > (uint32_t)cfg.maxRunS * 1000000UL) stop = true;
+    if (cfg.autoStopS && runWheelPulses >= 10 && sinceTrig > 3000000UL &&
         (now - wheelP.lastUs) > (uint32_t)cfg.autoStopS * 1000000UL) stop = true;
     if (stop) {
       gStopReq = false;
@@ -455,7 +549,7 @@ static void writerLoop(void*) {
       curHdr.imuType = imuType;
       curHdr.accLsbPerG = accLsbPerG;
       curHdr.gyrLsbPerDps = gyrLsbPerDps;
-      curHdr.epoch = pendingEpoch;
+      curHdr.epoch = 0xFFFFFFFFUL;               // written when the start is detected
       curHdr.wheelMagnets = cfg.wheelMagnets;
       curHdr.crankMagnets = cfg.crankMagnets;
       curHdr.chainring = cfg.chainring;
@@ -475,13 +569,26 @@ static void writerLoop(void*) {
       runWheelPulses = 0;
       runCrankPulses = 0;
       gStopReq = false;
+      gTriggered = false;
       lastError = "";
-      runStartUs = micros();
-      gState = ST_RECORDING;
+      armedSinceMs = millis();
+      gArmReset = true;
+      gState = ST_ARMED;
+      continue;
+    }
+
+    if (st == ST_DISCARD) {                     // disarmed: wipe the unused slot's header
+      esp_partition_erase_range(runsPart, slotOffset(curSlot), 4096);
+      gState = ST_IDLE;
       continue;
     }
 
     if (st == ST_RECORDING || st == ST_FINISHING) {
+      if (gTriggered) {                         // date the run: phone clock at arming + time since
+        gTriggered = false;
+        uint32_t ep = armEpoch ? armEpoch + (trigMs - armMs) / 1000 : 0;
+        esp_partition_write(runsPart, slotOffset(curSlot) + offsetof(RunHeader, epoch), &ep, 4);
+      }
       size_t n = xStreamBufferReceive(recBuf, page + fill, sizeof(page) - fill, pdMS_TO_TICKS(50));
       fill += n;
       if (fill == sizeof(page)) {
@@ -498,7 +605,10 @@ static void writerLoop(void*) {
         uint32_t total = bytesWritten;
         // dataBytes field was left at 0xFFFFFFFF, so it can be programmed without an erase
         esp_partition_write(runsPart, slotOffset(curSlot) + offsetof(RunHeader, dataBytes), &total, 4);
-        gState = ST_IDLE;
+        runsThisArm = runsThisArm + 1;
+        bool again = cfg.rearm && cfg.trigMode == 0 && !gNoRearm;
+        gNoRearm = false;
+        gState = again ? ST_PREPARING : ST_IDLE;
       }
       continue;
     }
@@ -512,6 +622,8 @@ static const char* stateName() {
     case ST_PREPARING: return "preparing";
     case ST_RECORDING: return "recording";
     case ST_FINISHING: return "saving";
+    case ST_ARMED:     return "armed";
+    case ST_DISCARD:   return "saving";
     default:           return "idle";
   }
 }
@@ -538,7 +650,10 @@ static bool requestArm(const String& label, uint32_t epoch, String& err) {
     char c = label[i];
     if (c >= 0x20 && c != '"' && c != '\\') pendingLabel[j++] = c;
   }
-  pendingEpoch = epoch;
+  armEpoch = epoch;
+  armMs = millis();
+  gNoRearm = false;
+  runsThisArm = 0;
   gState = ST_PREPARING;
   return true;
 }
@@ -570,30 +685,36 @@ static String apiStatus() {
     RunHeader h;
     for (uint32_t s = 0; s < numSlots; s++) if (readHeader(s, h)) used++;
   }
-  uint32_t elapsed = (gState == ST_RECORDING) ? (micros() - runStartUs) / 1000 : 0;
-  char buf[680];
+  uint8_t st = gState;
+  uint32_t elapsed = (st == ST_RECORDING || st == ST_FINISHING) ? (micros() - runTrigUs) / 1000 : 0;
+  uint32_t armedS = (st == ST_ARMED) ? (millis() - armedSinceMs) / 1000 : 0;
+  char buf[760];
   snprintf(buf, sizeof(buf),
     "{\"state\":\"%s\",\"imu\":\"%s\",\"imuErrors\":%lu,\"slots\":%lu,\"used\":%lu,"
     "\"run\":%lu,\"elapsedMs\":%lu,\"bytes\":%lu,\"cap\":%lu,\"overflow\":%lu,"
     "\"wheelPulses\":%lu,\"crankPulses\":%lu,\"wheelRpm\":%.1f,\"crankRpm\":%.1f,\"kmh\":%.1f,"
-    "\"ax\":%.3f,\"ay\":%.3f,\"az\":%.3f,\"gx\":%.1f,\"gy\":%.1f,\"gz\":%.1f,\"err\":%s}",
+    "\"ax\":%.3f,\"ay\":%.3f,\"az\":%.3f,\"gx\":%.1f,\"gy\":%.1f,\"gz\":%.1f,"
+    "\"armedS\":%lu,\"runsArmed\":%lu,\"trigMode\":%u,\"err\":%s}",
     stateName(), imuName(), (unsigned long)imuErrors, (unsigned long)numSlots, (unsigned long)used,
     (unsigned long)(gState != ST_IDLE ? curHdr.runId : 0), (unsigned long)elapsed,
     (unsigned long)bytesQueued, (unsigned long)(SLOT_SIZE - HEADER_SIZE), (unsigned long)overflowCount,
     (unsigned long)wheelP.count, (unsigned long)crankP.count, wr, cr, kmh,
     v[0] / accLsbPerG, v[1] / accLsbPerG, v[2] / accLsbPerG,
     v[3] / gyrLsbPerDps, v[4] / gyrLsbPerDps, v[5] / gyrLsbPerDps,
+    (unsigned long)armedS, (unsigned long)runsThisArm, cfg.trigMode,
     jsonStr(lastError.c_str(), 80).c_str());
   return String(buf);
 }
 
 static String apiSettings() {
-  char buf[256];
+  char buf[400];
   snprintf(buf, sizeof(buf),
     "{\"wheelCircMm\":%u,\"wheelMagnets\":%u,\"crankMagnets\":%u,\"chainring\":%u,\"cog\":%u,"
-    "\"forwardAxis\":%u,\"rateHz\":%u,\"autoStopS\":%u}",
+    "\"forwardAxis\":%u,\"rateHz\":%u,\"autoStopS\":%u,\"trigMode\":%u,\"launchKmh\":%.1f,"
+    "\"stillS\":%u,\"maxRunS\":%u,\"rearm\":%u}",
     cfg.wheelCircMm, cfg.wheelMagnets, cfg.crankMagnets, cfg.chainring, cfg.cog,
-    cfg.forwardAxis, cfg.rateHz, cfg.autoStopS);
+    cfg.forwardAxis, cfg.rateHz, cfg.autoStopS, cfg.trigMode, cfg.launchDkmh / 10.0,
+    cfg.stillS, cfg.maxRunS, cfg.rearm);
   return String(buf);
 }
 
@@ -610,6 +731,14 @@ static int apiSettingsSet(const Args& a, String& out) {
   uint16_t oldRate = cfg.rateHz;
   cfg.rateHz       = a.getLong("rateHz", cfg.rateHz, 100, 500);
   cfg.autoStopS    = a.getLong("autoStopS", cfg.autoStopS, 0, 60);
+  cfg.trigMode     = a.getLong("trigMode", cfg.trigMode, 0, 1);
+  if (a.has("launchKmh")) {                     // accepts decimals, e.g. 14.5
+    float k = a.get("launchKmh").toFloat();
+    if (k >= 4 && k <= 40) cfg.launchDkmh = (uint16_t)(k * 10 + 0.5f);
+  }
+  cfg.stillS       = a.getLong("stillS", cfg.stillS, 0, 15);
+  cfg.maxRunS      = a.getLong("maxRunS", cfg.maxRunS, 10, 120);
+  cfg.rearm        = a.getLong("rearm", cfg.rearm, 0, 1);
   saveSettings();
   if (cfg.rateHz != oldRate) startSampleTimer();
   out = apiSettings();
@@ -637,6 +766,7 @@ static String apiRuns() {
     for (uint32_t s = 0; s < numSlots; s++) {
       if (!readHeader(s, h)) continue;
       if (gState != ST_IDLE && s == curSlot) continue;   // still being written
+      if (runBytes(s, h) == 0) continue;                 // armed but never started
       char buf[200];
       snprintf(buf, sizeof(buf),
         "{\"id\":%lu,\"epoch\":%lu,\"bytes\":%lu,\"rateHz\":%u,\"chainring\":%u,\"cog\":%u,\"closed\":%s,\"label\":",
@@ -757,7 +887,7 @@ static void bleHandle(const BleCmd& raw) {
   else if (c.name == "settings") out = apiSettings();
   else if (c.name == "set") apiSettingsSet(a, out);
   else if (c.name == "arm") apiArm(a, out);
-  else if (c.name == "stop") { if (gState == ST_RECORDING) gStopReq = true; out = "{\"ok\":true}"; }
+  else if (c.name == "stop") { if (gState == ST_RECORDING || gState == ST_ARMED) { gNoRearm = true; gStopReq = true; } out = "{\"ok\":true}"; }
   else if (c.name == "mark") { if (gState == ST_RECORDING) gMarkReq = true; out = "{\"ok\":true}"; }
   else if (c.name == "runs") out = apiRuns();
   else if (c.name == "del") apiDelete(a, out);
@@ -836,7 +966,7 @@ static void bleStart() {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  Serial.println("\nBMX logger starting (build: bluetooth only)");
+  Serial.println("\nBMX logger starting (build: launch trigger)");
 
   pinMode(PIN_LED, OUTPUT);
   pinMode(PIN_BUTTON, INPUT_PULLUP);
@@ -860,7 +990,7 @@ void setup() {
     Serial.println(lastError);
   }
 
-  recBuf = xStreamBufferCreate(32 * 1024, 1);
+  recBuf = xStreamBufferCreate(48 * 1024, 1);   // room for the 3 s before a start plus live data
 
   wheelP.lockoutUs = WHEEL_LOCKOUT_US;
   crankP.lockoutUs = CRANK_LOCKOUT_US;
@@ -883,7 +1013,7 @@ void loop() {
       imuName(), (unsigned long)imuErrors);
   }
 
-  // button: press to arm, press again to stop (50 ms debounce)
+  // button: press to arm; press again to disarm, or to stop a run (50 ms debounce)
   static bool lastBtn = true;
   static uint32_t btnChange = 0;
   bool btn = digitalRead(PIN_BUTTON);
@@ -892,18 +1022,20 @@ void loop() {
     lastBtn = btn;
     if (!btn) {
       if (gState == ST_IDLE) { String e; requestArm("button", 0, e); }
-      else if (gState == ST_RECORDING) gStopReq = true;
+      else if (gState == ST_RECORDING || gState == ST_ARMED) { gNoRearm = true; gStopReq = true; }
     }
   }
 
-  // LED: recording = solid, preparing/saving = fast blink, Bluetooth connected = slow pulse,
-  // idle = short blip every 2 s, no sensor = double blink
+  // LED: recording = solid, preparing/saving = fast blink, armed = quick blip twice a second,
+  // Bluetooth connected = slow pulse, idle = short blip every 2 s, no sensor = double blink
   uint32_t ms = millis();
   bool on;
   switch (gState) {
     case ST_RECORDING: on = true; break;
     case ST_PREPARING:
-    case ST_FINISHING: on = (ms / 100) % 2; break;
+    case ST_FINISHING:
+    case ST_DISCARD:   on = (ms / 100) % 2; break;
+    case ST_ARMED:     on = (ms % 500) < 60; break;
     default:
       if (imuType == IMU_NONE) { uint32_t p = ms % 1000; on = p < 80 || (p > 200 && p < 280); }
       else if (bleConn != BLE_HS_CONN_HANDLE_NONE) on = (ms % 2000) < 1000;

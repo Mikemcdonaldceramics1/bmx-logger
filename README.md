@@ -40,7 +40,10 @@ Keep `partitions.csv` and `ble_proto.h` next to the `.ino`.
 2. Open the app, tap **Connect**, pick **BMX-Logger**, and allow Nearby devices. After the first
    time the app connects by itself when it opens. The LED pulses slowly while connected.
 3. Settings: wheel circumference, magnet counts, forward axis. Save.
-4. Record: arm, hold the bike still 1 s, ride. Runs: tick runs, **Analyze selected**.
+4. Record: tap **Arm** in the pits, then ride to the gate. The logger waits for the start: when the
+   bike gets up to the launch speed right after standing still, it records the race (including the
+   3 s before), stops when the wheel stops, and arms again for the next moto. Adjust all of this in
+   Settings > Start and stop. **Disarm** cancels. Runs: tick runs, **Analyze selected**.
    **Save** on a run opens the share sheet (Drive, email, Files).
 
 ## Versions

@@ -50,6 +50,8 @@ nav button.active{color:var(--accent)}
 .pill{display:inline-block;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:700;text-transform:uppercase;background:var(--bg);color:var(--muted)}
 .pill.recording{background:var(--bad);color:#fff}
 .pill.preparing,.pill.saving{background:var(--warn);color:#fff}
+.pill.armed{background:var(--ok);color:#fff}
+.btn.disarm{background:var(--bg);color:var(--ink);border:2px solid var(--ok)}
 label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
 input,select{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-size:16px}
 .row{display:flex;gap:10px}.row>*{flex:1}
@@ -118,7 +120,7 @@ th{color:var(--muted);font-weight:600}
     <p class="note" id="rollNote"></p>
     <button class="btn" id="armBtn" style="margin-top:12px">Arm</button>
     <button class="btn sec" id="markBtn" style="margin-top:8px;display:none">Mark this moment</button>
-    <p class="note">After arming, keep the bike still and level for 1 second so the sensor can find "level". Recording stops by itself once the wheel has been still for the auto-stop time.</p>
+    <p class="note" id="armNote">Arm in the pits, then ride to the gate. The logger waits for the start: when the bike launches after standing still, it records the race, including the 3 seconds before the gate dropped. It stops when the wheel stops, then arms again for the next moto.</p>
   </div>
 </section>
 
@@ -170,6 +172,30 @@ th{color:var(--muted);font-weight:600}
     </div>
   </div>
   <div class="card">
+    <h2>Start and stop</h2>
+    <label for="sTrig">Start recording</label>
+    <select id="sTrig">
+      <option value="0">On the launch (gate start)</option>
+      <option value="1">Right away when armed</option>
+    </select>
+    <div id="launchFields">
+      <div class="row">
+        <div><label for="sLaunch" id="sLaunchLbl">Launch speed (mph)</label><input id="sLaunch" type="number" inputmode="decimal" step="0.5" min="2" max="25"></div>
+        <div><label for="sStill">Stand still first (s)</label><input id="sStill" type="number" inputmode="numeric" min="0" max="15"></div>
+      </div>
+      <p class="note">Recording starts when the wheel reaches the launch speed within 4 seconds of rolling after standing still that long. Walking or rolling slowly to the gate stays below it. Set "stand still" to 0 to start on speed alone.</p>
+    </div>
+    <div class="row">
+      <div><label for="sAuto">Stop when wheel still (s)</label><input id="sAuto" type="number" inputmode="numeric" min="0" max="60"></div>
+      <div><label for="sMax">Longest run (s)</label><input id="sMax" type="number" inputmode="numeric" min="10" max="120"></div>
+    </div>
+    <label for="sRearm">After a run</label>
+    <select id="sRearm">
+      <option value="1">Arm again for the next start</option>
+      <option value="0">Stop and wait</option>
+    </select>
+  </div>
+  <div class="card">
     <h2>Logger</h2>
     <label for="sFwd">Sensor axis pointing to the front wheel</label>
     <select id="sFwd">
@@ -180,9 +206,8 @@ th{color:var(--muted);font-weight:600}
     <div class="row">
       <div><label for="sRate">Sample rate (Hz)</label>
         <select id="sRate"><option>100</option><option>200</option><option selected>250</option><option>400</option><option>500</option></select></div>
-      <div><label for="sAuto">Auto-stop after (s still)</label><input id="sAuto" type="number" inputmode="numeric" min="0" max="60"></div>
     </div>
-    <p class="note">Each run slot holds about 68 s at 250 Hz, 34 s at 500 Hz. The logger keeps the newest runs and overwrites the oldest.</p>
+    <p class="note">Each run slot holds about 65 s at 250 Hz, 32 s at 500 Hz, counting the 3 s before the start. The logger keeps the newest 7 runs and overwrites the oldest.</p>
     <button class="btn" id="saveSettings" style="margin-top:12px">Save to logger</button>
     <div class="err" id="setErr"></div>
   </div>
@@ -671,8 +696,11 @@ function renderStatus(s) {
   if (!s) return;
   {
     $('st').textContent = s.state; $('st').className = 'pill ' + s.state;
-    $('stInfo').textContent = s.state === 'recording'
-      ? `run #${s.run} · ${Math.round(100 * s.bytes / s.cap)}% of slot` : `${s.used}/${s.slots} slots used`;
+    const mmss = n => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`;
+    const saved = s.runsArmed ? ` · ${s.runsArmed} saved` : '';
+    $('stInfo').textContent = s.state === 'recording' ? `run #${s.run} · ${Math.round(100 * s.bytes / s.cap)}% of slot`
+      : s.state === 'armed' ? `waiting for the start · ${mmss(s.armedS || 0)}${saved}`
+      : `${s.used}/${s.slots} slots used`;
     $('liveSpeed').textContent = disp.speed(s.kmh / 3.6).toFixed(1);
     $('liveSpeedU').textContent = disp.speedU();
     $('liveCad').textContent = Math.round(s.crankRpm);
@@ -680,10 +708,10 @@ function renderStatus(s) {
     $('liveTime').textContent = (s.elapsedMs / 1000).toFixed(1);
     $('liveWp').textContent = s.wheelPulses; $('liveCp').textContent = s.crankPulses;
     $('liveImu').textContent = s.imu;
-    const rec = s.state === 'recording', busy = s.state !== 'idle';
-    $('armBtn').textContent = rec ? 'Stop' : (busy ? (s.state === 'preparing' ? 'Preparing...' : 'Saving...') : 'Arm');
-    $('armBtn').className = 'btn' + (rec ? ' stop' : '');
-    $('armBtn').disabled = busy && !rec;
+    const rec = s.state === 'recording', armed = s.state === 'armed', busy = s.state !== 'idle';
+    $('armBtn').textContent = rec ? 'Stop' : armed ? 'Disarm' : (busy ? (s.state === 'preparing' ? 'Preparing...' : 'Saving...') : 'Arm');
+    $('armBtn').className = 'btn' + (rec ? ' stop' : armed ? ' disarm' : '');
+    $('armBtn').disabled = busy && !rec && !armed;
     $('markBtn').style.display = rec ? 'block' : 'none';
     keepAwake(busy);
     let err = s.err || '';
@@ -696,7 +724,7 @@ function renderStatus(s) {
 $('armBtn').onclick = async () => {
   $('recErr').textContent = '';
   try {
-    if (lastStatus && lastStatus.state === 'recording') { await api('/api/stop', {}); }
+    if (lastStatus && (lastStatus.state === 'recording' || lastStatus.state === 'armed')) { await api('/api/stop', {}); }
     else {
       await api('/api/arm', { label: $('label').value || '', epoch: Math.floor(Date.now() / 1000), chainring: $('ring').value, cog: $('cog').value });
       if (settings) { settings.chainring = +$('ring').value; settings.cog = +$('cog').value; }
@@ -713,6 +741,11 @@ async function loadSettings() {
     settings = await api('/api/settings');
     $('sCirc').value = settings.wheelCircMm; $('sWm').value = settings.wheelMagnets; $('sCm').value = settings.crankMagnets;
     $('sFwd').value = settings.forwardAxis; $('sRate').value = settings.rateHz; $('sAuto').value = settings.autoStopS;
+    if ('trigMode' in settings) {
+      $('sTrig').value = settings.trigMode; $('sStill').value = settings.stillS; $('sMax').value = settings.maxRunS;
+      $('sRearm').value = settings.rearm; $('sLaunch').value = launchToDisp(settings.launchKmh);
+    }
+    showTrigFields(); armNote();
     if (!$('ring').value) $('ring').value = settings.chainring;
     if (!$('cog').value) $('cog').value = settings.cog;
     gearNote();
@@ -722,20 +755,53 @@ $('saveSettings').onclick = async () => {
   $('setErr').textContent = '';
   try {
     settings = await api('/api/settings', { wheelCircMm: $('sCirc').value, wheelMagnets: $('sWm').value, crankMagnets: $('sCm').value,
-      forwardAxis: $('sFwd').value, rateHz: $('sRate').value, autoStopS: $('sAuto').value });
+      forwardAxis: $('sFwd').value, rateHz: $('sRate').value, autoStopS: $('sAuto').value,
+      trigMode: $('sTrig').value, launchKmh: launchToKmh(+$('sLaunch').value), stillS: $('sStill').value,
+      maxRunS: $('sMax').value, rearm: $('sRearm').value });
     $('setErr').style.color = 'var(--ok)'; $('setErr').textContent = 'Saved.';
+    armNote();
     gearNote();
-  } catch (e) { $('setErr').style.color = ''; $('setErr').textContent = e.message; }
+  } catch (e) {
+    $('setErr').style.color = '';
+    $('setErr').textContent = /busy/.test(e.message) && lastStatus && lastStatus.state !== 'idle'
+      ? 'The logger is armed or recording. Disarm it on the Record tab, then save.' : e.message;
+  }
 };
+// launch speed is stored in km/h on the logger, shown in the chosen units
+const launchToDisp = kmh => Math.round((disp.units === 'imperial' ? kmh / 1.609344 : kmh) * 10) / 10;
+const launchToKmh = v => Math.round((disp.units === 'imperial' ? v * 1.609344 : v) * 10) / 10;
+function showTrigFields() {
+  $('launchFields').hidden = $('sTrig').value === '1';
+  $('sRearm').disabled = $('sTrig').value === '1';
+  $('sLaunchLbl').textContent = `Launch speed (${disp.speedU()})`;
+}
+$('sTrig').onchange = showTrigFields;
+// the note under Arm follows the saved start and stop settings
+function armNote() {
+  if (!settings || !('trigMode' in settings)) return;
+  const stop = settings.autoStopS ? `It stops when the wheel has been still for ${settings.autoStopS} s, or after ${settings.maxRunS} s.`
+    : `It stops after ${settings.maxRunS} s.`;
+  $('armNote').textContent = settings.trigMode == 1
+    ? `Recording starts as soon as you arm. ${stop}`
+    : `Arm in the pits, then ride to the gate. The logger waits for the start: when the bike reaches ${launchToDisp(settings.launchKmh)} ${disp.speedU()} `
+      + (settings.stillS ? `after standing still for ${settings.stillS} s, ` : '')
+      + `it records the race, including the 3 seconds before. ${stop}`
+      + (settings.rearm ? ' Then it arms again for the next moto.' : '');
+}
 $('units').value = disp.units;
 $('splits').value = disp.splits.join(',');
-$('units').onchange = () => { store.set('units', $('units').value); $('splits').value = disp.splits.join(','); gearNote(); invalidate(); };
+$('units').onchange = () => {
+  const kmh = launchToKmh(+$('sLaunch').value);
+  store.set('units', $('units').value); $('splits').value = disp.splits.join(',');
+  if ($('sLaunch').value) $('sLaunch').value = launchToDisp(kmh);
+  showTrigFields(); gearNote(); invalidate();
+};
 $('splits').onchange = () => { store.set('splits_' + disp.units, $('splits').value); invalidate(); };
 function invalidate() { runs.forEach(r => r.res = null); }
 
 // ---- runs
 function fmtDate(epoch) {
-  if (!epoch) return 'no date';
+  if (!epoch || epoch >= 0xFFFFFF00) return 'no date';
   const d = new Date(epoch * 1000);
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
