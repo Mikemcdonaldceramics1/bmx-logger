@@ -34,6 +34,11 @@ From Arduino IDE instead: install "esp32 by Espressif" 3.x and the "NimBLE-Ardui
 h2zero (tested 2.5.1), pick "ESP32 Dev Module", open `firmware/bmx_logger/bmx_logger.ino`, Upload.
 Keep `partitions.csv` and `ble_proto.h` next to the `.ino`.
 
+## Battery level (optional)
+
+Two 100 kOhm resistors: charger OUT+ (battery side) to D35, and D35 to GND. Optionally 0.1 uF from D35
+to GND. The app header then shows battery %, amber at 25% and red at 10%. Without them it hides.
+
 ## Use it
 
 1. Power the logger. Its LED blips every 2 s while it waits for a phone.

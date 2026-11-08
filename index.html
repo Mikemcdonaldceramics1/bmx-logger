@@ -34,6 +34,8 @@ header h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.2px;flex:1}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--bad)}
 .dot.on{background:var(--ok)}
 #conn{font-size:12px;color:var(--muted)}
+.batt{font:600 12px system-ui,sans-serif;padding:3px 8px;border-radius:99px;background:var(--bg);color:var(--ink);font-variant-numeric:tabular-nums}
+.batt.low{background:var(--warn);color:#fff}.batt.crit{background:var(--bad);color:#fff}
 main{padding-block:12px 96px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:760px;margin:0 auto}
 nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);z-index:5}
 nav button{flex:1;background:none;border:0;color:var(--muted);font:600 13px system-ui,sans-serif;padding:14px 4px}
@@ -85,6 +87,7 @@ th{color:var(--muted);font-weight:600}
 <header>
   <span class="dot" id="dot"></span>
   <h1>BMX Logger</h1>
+  <span class="batt" id="batt" hidden></span>
   <span id="conn">offline</span>
   <button type="button" class="hbtn" id="bleBtn" hidden>Connect</button>
 </header>
@@ -708,6 +711,13 @@ function renderStatus(s) {
     $('liveTime').textContent = (s.elapsedMs / 1000).toFixed(1);
     $('liveWp').textContent = s.wheelPulses; $('liveCp').textContent = s.crankPulses;
     $('liveImu').textContent = s.imu;
+    const bp = s.battPct;
+    $('batt').hidden = !(bp >= 0);
+    if (bp >= 0) {
+      $('batt').textContent = `Battery ${bp}%`;
+      $('batt').title = `${(+s.batt).toFixed(2)} V`;
+      $('batt').className = 'batt' + (bp <= 10 ? ' crit' : bp <= 25 ? ' low' : '');
+    }
     const rec = s.state === 'recording', armed = s.state === 'armed', busy = s.state !== 'idle';
     $('armBtn').textContent = rec ? 'Stop' : armed ? 'Disarm' : (busy ? (s.state === 'preparing' ? 'Preparing...' : 'Saving...') : 'Arm');
     $('armBtn').className = 'btn' + (rec ? ' stop' : armed ? ' disarm' : '');

@@ -48,6 +48,7 @@
 #define PIN_CRANK   33
 #define PIN_BUTTON  27
 #define PIN_LED     2
+#define PIN_BATT    35   // battery voltage through a 100k/100k divider (optional)
 
 static const uint32_t SLOT_SIZE   = 0x50000;  // 320 KB per run (~68 s at 250 Hz)
 static const uint32_t HEADER_SIZE = 64;
@@ -674,6 +675,28 @@ struct Args {
 };
 
 
+// ------------------------------------------------------------------ battery
+static volatile float battV = 0;               // 0 = no divider connected
+
+// Lithium-ion state of charge from voltage (rough; the reading dips a little while Bluetooth sends)
+static int battPercent(float v) {
+  if (v <= 0) return -1;
+  static const float V[] = {3.30f, 3.50f, 3.62f, 3.68f, 3.72f, 3.76f, 3.80f, 3.85f, 3.92f, 4.00f, 4.10f, 4.20f};
+  static const int   P[] = {0,     5,     10,    20,    30,    40,    50,    60,    70,    80,    90,    100};
+  if (v <= V[0]) return 0;
+  for (int i = 1; i < 12; i++)
+    if (v <= V[i]) return P[i - 1] + (int)((v - V[i - 1]) / (V[i] - V[i - 1]) * (P[i] - P[i - 1]) + 0.5f);
+  return 100;
+}
+
+static void readBattery() {
+  uint32_t mv = 0;
+  for (int i = 0; i < 16; i++) mv += analogReadMilliVolts(PIN_BATT);
+  float v = mv / 16.0f * 2.0f / 1000.0f;          // undo the 1:2 divider
+  if (v < 2.5f) { battV = 0; return; }            // nothing connected (pin pulled low or floating)
+  battV = battV > 0 ? battV * 0.8f + v * 0.2f : v; // smooth out radio dips
+}
+
 static String apiStatus() {
   int16_t v[6];
   for (int i = 0; i < 6; i++) v[i] = latest[i];
@@ -694,14 +717,14 @@ static String apiStatus() {
     "\"run\":%lu,\"elapsedMs\":%lu,\"bytes\":%lu,\"cap\":%lu,\"overflow\":%lu,"
     "\"wheelPulses\":%lu,\"crankPulses\":%lu,\"wheelRpm\":%.1f,\"crankRpm\":%.1f,\"kmh\":%.1f,"
     "\"ax\":%.3f,\"ay\":%.3f,\"az\":%.3f,\"gx\":%.1f,\"gy\":%.1f,\"gz\":%.1f,"
-    "\"armedS\":%lu,\"runsArmed\":%lu,\"trigMode\":%u,\"err\":%s}",
+    "\"armedS\":%lu,\"runsArmed\":%lu,\"trigMode\":%u,\"batt\":%.2f,\"battPct\":%d,\"err\":%s}",
     stateName(), imuName(), (unsigned long)imuErrors, (unsigned long)numSlots, (unsigned long)used,
     (unsigned long)(gState != ST_IDLE ? curHdr.runId : 0), (unsigned long)elapsed,
     (unsigned long)bytesQueued, (unsigned long)(SLOT_SIZE - HEADER_SIZE), (unsigned long)overflowCount,
     (unsigned long)wheelP.count, (unsigned long)crankP.count, wr, cr, kmh,
     v[0] / accLsbPerG, v[1] / accLsbPerG, v[2] / accLsbPerG,
     v[3] / gyrLsbPerDps, v[4] / gyrLsbPerDps, v[5] / gyrLsbPerDps,
-    (unsigned long)armedS, (unsigned long)runsThisArm, cfg.trigMode,
+    (unsigned long)armedS, (unsigned long)runsThisArm, cfg.trigMode, (double)battV, battPercent(battV),
     jsonStr(lastError.c_str(), 80).c_str());
   return String(buf);
 }
@@ -966,9 +989,11 @@ static void bleStart() {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  Serial.println("\nBMX logger starting (build: launch trigger)");
+  Serial.println("\nBMX logger starting (build: battery level)");
 
   pinMode(PIN_LED, OUTPUT);
+  pinMode(PIN_BATT, INPUT);
+  analogSetPinAttenuation(PIN_BATT, ADC_11db);   // 0 to about 2.5 V at the pin
   pinMode(PIN_BUTTON, INPUT_PULLUP);
   pinMode(PIN_WHEEL, INPUT_PULLUP);
   pinMode(PIN_CRANK, INPUT_PULLUP);
@@ -1005,6 +1030,8 @@ void setup() {
 }
 
 void loop() {
+  static uint32_t lastBatt = 0;
+  if (millis() - lastBatt > 1000) { lastBatt = millis(); readBattery(); }
   static uint32_t lastBeat = 0;
   if (millis() - lastBeat > 5000) {
     lastBeat = millis();

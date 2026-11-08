@@ -91,6 +91,7 @@ window.BMX_DEMO = true;
   // Race-day timeline: arm -> erase slot -> armed (rider rolls to the gate and waits) -> gate drops,
   // the logger triggers and records -> saves -> arms again for the next moto (like the firmware).
   let runsArmed = 0;
+  const bootMs = performance.now();   // the demo battery starts at 87% and drops 1% a minute
   function newRec(label, ring, cog) {
     const seed = (Math.random() * 1e9) | 0;
     return { t0: performance.now(), label, ring, cog, seed, armedFor: 7 + Math.random() * 4,
@@ -124,7 +125,8 @@ window.BMX_DEMO = true;
     tick();
     const base = { state, imu: 'MPU-6050 (simulated)', imuErrors: 0, slots: SLOTS, used: runs.length, run: rec ? nextId : 0, elapsedMs: 0,
       bytes: 0, cap: 327616, overflow: 0, wheelPulses: pulses.w, crankPulses: pulses.c, wheelRpm: 0, crankRpm: 0, kmh: 0, ax: 0, ay: 0, az: 1,
-      gx: 0, gy: 0, gz: 0, armedS: 0, runsArmed, trigMode: cfg.trigMode, err: '' };
+      gx: 0, gy: 0, gz: 0, armedS: 0, runsArmed, trigMode: cfg.trigMode,
+      battPct: Math.max(5, 87 - Math.floor((performance.now() - bootMs) / 60000)), batt: 3.97, err: '' };
     if (state === 'armed') {
       const el = (performance.now() - rec.t0) / 1000, rolling = el < rec.armedFor - 3;  // roll to the gate, then wait on it
       Object.assign(base, { armedS: Math.floor(el), kmh: rolling ? 4 + Math.sin(el * 2) : 0,
