@@ -33,6 +33,10 @@
 #include <NimBLEDevice.h>
 #include "ble_proto.h"
 #include "launch_detect.h"
+#include "fw_version.h"
+#include <Update.h>
+#include "mbedtls/sha256.h"
+#include "esp_ota_ops.h"
 #include <Preferences.h>
 #include "esp_partition.h"
 #include "esp_timer.h"
@@ -43,6 +47,7 @@
 // Declared early so the Arduino builder's auto-generated prototypes compile.
 struct Args;
 struct BleCmd;
+static volatile bool otaActive = false;   // firmware update over Bluetooth in progress
 
 // ------------------------------------------------------------------ config
 
@@ -649,6 +654,7 @@ static bool requestArm(const String& label, uint32_t epoch, String& err) {
   if (!runsPart) { err = "runs partition missing (partitions.csv not used)"; return false; }
   if (imuType == IMU_NONE) { err = "no motion sensor found"; return false; }
   if (gState != ST_IDLE) { err = "busy"; return false; }
+  if (otaActive) { err = "firmware update in progress"; return false; }
   memset(pendingLabel, 0, sizeof(pendingLabel));
   size_t j = 0;
   for (size_t i = 0; i < label.length() && j < sizeof(pendingLabel) - 1; i++) {
@@ -721,14 +727,14 @@ static String apiStatus() {
     "\"run\":%lu,\"elapsedMs\":%lu,\"bytes\":%lu,\"cap\":%lu,\"overflow\":%lu,"
     "\"wheelPulses\":%lu,\"crankPulses\":%lu,\"wheelRpm\":%.1f,\"crankRpm\":%.1f,\"kmh\":%.1f,"
     "\"ax\":%.3f,\"ay\":%.3f,\"az\":%.3f,\"gx\":%.1f,\"gy\":%.1f,\"gz\":%.1f,"
-    "\"armedS\":%lu,\"runsArmed\":%lu,\"trigMode\":%u,\"batt\":%.2f,\"battPct\":%d,\"err\":%s}",
+    "\"armedS\":%lu,\"runsArmed\":%lu,\"trigMode\":%u,\"batt\":%.2f,\"battPct\":%d,\"fw\":%d,\"ota\":%s,\"err\":%s}",
     stateName(), imuName(), (unsigned long)imuErrors, (unsigned long)numSlots, (unsigned long)used,
     (unsigned long)(gState != ST_IDLE ? curHdr.runId : 0), (unsigned long)elapsed,
     (unsigned long)bytesQueued, (unsigned long)(SLOT_SIZE - HEADER_SIZE), (unsigned long)overflowCount,
     (unsigned long)wheelP.count, (unsigned long)crankP.count, wr, cr, kmh,
     v[0] / accLsbPerG, v[1] / accLsbPerG, v[2] / accLsbPerG,
     v[3] / gyrLsbPerDps, v[4] / gyrLsbPerDps, v[5] / gyrLsbPerDps,
-    (unsigned long)armedS, (unsigned long)runsThisArm, cfg.trigMode, (double)battV, battPercent(battV),
+    (unsigned long)armedS, (unsigned long)runsThisArm, cfg.trigMode, (double)battV, battPercent(battV), FW_VERSION, otaActive ? "true" : "false",
     jsonStr(lastError.c_str(), 80).c_str());
   return String(buf);
 }
@@ -848,6 +854,7 @@ static const char* BLE_SVC  = "6e7a0001-3b2c-4d1a-9f5e-8b6c4d2a1f00";
 static const char* BLE_CMD  = "6e7a0002-3b2c-4d1a-9f5e-8b6c4d2a1f00";
 static const char* BLE_RESP = "6e7a0003-3b2c-4d1a-9f5e-8b6c4d2a1f00";
 static const char* BLE_STAT = "6e7a0004-3b2c-4d1a-9f5e-8b6c4d2a1f00";
+static const char* BLE_OTA  = "6e7a0005-3b2c-4d1a-9f5e-8b6c4d2a1f00";
 
 static NimBLEServer* bleServer = nullptr;
 static NimBLECharacteristic* chrResp = nullptr;
@@ -890,6 +897,63 @@ class CmdCb : public NimBLECharacteristicCallbacks {
   }
 };
 
+// ---- OTA: firmware update over Bluetooth
+// 1. The app sends "ota?size=N&sha=<sha256 hex>"; the logger must be idle.
+// 2. The app writes the firmware to the OTA characteristic (write without response), keeping no more
+//    than OTA_WINDOW bytes ahead of what the logger has acknowledged.
+// 3. The logger writes it to the spare app slot and reports progress on the status channel as
+//    {"ota":bytesWritten}. When everything has arrived and the SHA-256 matches, it switches to the
+//    new firmware, sends {"ota":size,"done":true} and restarts. Errors come back as {"otaErr":"..."}.
+// The new firmware marks itself good after running 15 s; if it crashes before that, the bootloader
+// goes back to the old one.
+static const size_t OTA_WINDOW = 8192;
+static StreamBufferHandle_t otaBuf = nullptr;
+static uint32_t otaSize = 0, otaWritten = 0, otaLastAck = 0, otaLastData = 0;
+static uint8_t otaSha[32];
+static mbedtls_sha256_context otaCtx;
+static volatile bool otaOverflow = false;
+
+class OtaCb : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* c, NimBLEConnInfo&) override {
+    if (!otaActive) return;
+    NimBLEAttValue v = c->getValue();
+    if (xStreamBufferSend(otaBuf, v.data(), v.length(), 0) != v.length()) otaOverflow = true;
+  }
+};
+
+static int hexNib(char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; }
+
+static void otaAbort(const char* why);
+
+static int apiOtaBegin(const Args& a, String& out) {
+  if (gState != ST_IDLE) { out = "{\"ok\":false,\"err\":\"Disarm the logger first\"}"; return 409; }
+  if (otaActive) Update.abort();
+  otaActive = false;
+  uint32_t size = strtoul(a.get("size").c_str(), nullptr, 10);
+  String sha = a.get("sha");
+  if (size < 1024 || sha.length() != 64) { out = "{\"ok\":false,\"err\":\"bad update request\"}"; return 400; }
+  for (int i = 0; i < 32; i++) {
+    int h = hexNib(sha[2 * i]), l = hexNib(sha[2 * i + 1]);
+    if (h < 0 || l < 0) { out = "{\"ok\":false,\"err\":\"bad checksum\"}"; return 400; }
+    otaSha[i] = h << 4 | l;
+  }
+  if (!Update.begin(size, U_FLASH)) {
+    out = "{\"ok\":false,\"err\":" + jsonStr(Update.errorString(), 80) + "}";
+    return 500;
+  }
+  if (!otaBuf) otaBuf = xStreamBufferCreate(2 * OTA_WINDOW, 1);
+  xStreamBufferReset(otaBuf);
+  mbedtls_sha256_init(&otaCtx);
+  mbedtls_sha256_starts(&otaCtx, 0);
+  otaSize = size; otaWritten = 0; otaLastAck = 0; otaLastData = millis(); otaOverflow = false;
+  otaActive = true;
+  Serial.printf("Update: receiving %lu bytes\n", (unsigned long)size);
+  char buf[96];
+  snprintf(buf, sizeof(buf), "{\"ok\":true,\"mtu\":%u,\"window\":%u}", bleMtu, (unsigned)OTA_WINDOW);
+  out = buf;
+  return 200;
+}
+
 // Sends one framed message, retrying while the Bluetooth buffers are full.
 static bool bleSend(NimBLECharacteristic* chr, uint8_t type, const uint8_t* data, size_t len) {
   return bmxble::sendFramed(type, data, len, bleMtu, [chr](const uint8_t* f, size_t n) {
@@ -905,6 +969,52 @@ static bool bleSendJson(NimBLECharacteristic* chr, const String& s) {
   return bleSend(chr, bmxble::FRAME_JSON, (const uint8_t*)s.c_str(), s.length());
 }
 
+static void otaAbort(const char* why) {
+  if (!otaActive) return;
+  otaActive = false;
+  Update.abort();
+  mbedtls_sha256_free(&otaCtx);
+  Serial.printf("Update: stopped - %s\n", why);
+  if (bleConn != BLE_HS_CONN_HANDLE_NONE) bleSendJson(chrStat, "{\"otaErr\":" + jsonStr(why, 80) + "}");
+}
+
+// Moves received firmware from the Bluetooth buffer into flash. Runs in the Bluetooth task.
+static void otaPump() {
+  if (!otaActive) return;
+  if (otaOverflow) { otaAbort("data arrived too fast"); return; }
+  if (bleConn == BLE_HS_CONN_HANDLE_NONE) { otaAbort("Bluetooth disconnected"); return; }
+  static uint8_t chunk[4096];
+  size_t n;
+  while ((n = xStreamBufferReceive(otaBuf, chunk, sizeof(chunk), 0)) > 0) {
+    if (otaWritten + n > otaSize) { otaAbort("more data than expected"); return; }
+    if (Update.write(chunk, n) != n) { otaAbort(Update.errorString()); return; }
+    mbedtls_sha256_update(&otaCtx, chunk, n);
+    otaWritten += n;
+    otaLastData = millis();
+  }
+  if (otaWritten == otaSize) {
+    uint8_t got[32];
+    mbedtls_sha256_finish(&otaCtx, got);
+    mbedtls_sha256_free(&otaCtx);
+    if (memcmp(got, otaSha, 32) != 0) { otaAbort("checksum mismatch - nothing changed"); return; }
+    if (!Update.end(true)) { otaActive = false; bleSendJson(chrStat, "{\"otaErr\":" + jsonStr(Update.errorString(), 80) + "}"); return; }
+    otaActive = false;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "{\"ota\":%lu,\"done\":true}", (unsigned long)otaWritten);
+    bleSendJson(chrStat, buf);
+    Serial.println("Update: done, restarting into the new firmware");
+    delay(800);
+    ESP.restart();
+  }
+  if (otaWritten - otaLastAck >= 4096) {
+    otaLastAck = otaWritten;
+    char buf[40];
+    snprintf(buf, sizeof(buf), "{\"ota\":%lu}", (unsigned long)otaWritten);
+    bleSendJson(chrStat, buf);
+  }
+  if (millis() - otaLastData > 15000) otaAbort("no data for 15 s");
+}
+
 static void bleHandle(const BleCmd& raw) {
   bmxble::Command c = bmxble::parseCommand(raw.data, raw.len);
   CmdArgs a(c);
@@ -917,6 +1027,8 @@ static void bleHandle(const BleCmd& raw) {
   else if (c.name == "stop") { if (gState == ST_RECORDING || gState == ST_ARMED) { gNoRearm = true; gStopReq = true; } out = "{\"ok\":true}"; }
   else if (c.name == "mark") { if (gState == ST_RECORDING) gMarkReq = true; out = "{\"ok\":true}"; }
   else if (c.name == "runs") out = apiRuns();
+  else if (c.name == "ota") apiOtaBegin(a, out);
+  else if (c.name == "otacancel") { otaAbort("cancelled"); out = "{\"ok\":true}"; }
   else if (c.name == "del") apiDelete(a, out);
   else if (c.name == "get") {
     uint32_t base, total;
@@ -960,7 +1072,8 @@ static void bleLoop(void*) {
   BleCmd cmd;
   uint32_t lastStat = 0;
   for (;;) {
-    if (xQueueReceive(bleCmdQ, &cmd, pdMS_TO_TICKS(50)) == pdTRUE) bleHandle(cmd);
+    if (xQueueReceive(bleCmdQ, &cmd, pdMS_TO_TICKS(otaActive ? 2 : 50)) == pdTRUE) bleHandle(cmd);
+    otaPump();
     if (bleConn != BLE_HS_CONN_HANDLE_NONE && millis() - lastStat >= 500) {
       lastStat = millis();
       bleSendJson(chrStat, apiStatus());
@@ -978,6 +1091,8 @@ static void bleStart() {
   cmd->setCallbacks(new CmdCb());
   chrResp = svc->createCharacteristic(BLE_RESP, NIMBLE_PROPERTY::NOTIFY);
   chrStat = svc->createCharacteristic(BLE_STAT, NIMBLE_PROPERTY::NOTIFY);
+  NimBLECharacteristic* ota = svc->createCharacteristic(BLE_OTA, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR, 512);
+  ota->setCallbacks(new OtaCb());
   svc->start();
   NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
   adv->setName("BMX-Logger");
@@ -993,7 +1108,7 @@ static void bleStart() {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  Serial.println("\nBMX logger starting (build: sensors swapped)");
+  Serial.printf("\nBMX logger starting (firmware build %d)\n", FW_VERSION);
 
   pinMode(PIN_LED, OUTPUT);
   pinMode(PIN_BATT, INPUT);
@@ -1033,7 +1148,16 @@ void setup() {
   bleStart();
 }
 
+// Tell the Arduino core not to mark this firmware good at boot: loop() does it after 15 s of
+// running, so a new firmware that crashes early is rolled back by the bootloader.
+extern "C" bool verifyRollbackLater() { return true; }
+
 void loop() {
+  static bool markedGood = false;
+  if (!markedGood && millis() > 15000) {
+    markedGood = true;
+    esp_ota_mark_app_valid_cancel_rollback();
+  }
   static uint32_t lastBatt = 0;
   if (millis() - lastBatt > 1000) { lastBatt = millis(); readBattery(); }
   static uint32_t lastBeat = 0;

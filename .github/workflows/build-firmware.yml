@@ -1,3 +1,6 @@
+# Builds the ESP32 firmware on every firmware change (or by hand from the Actions tab).
+#  - "firmware" release: bmx_logger_merged.bin, the full image to flash over USB at 0x0.
+#  - "fw" branch: app.bin + fw.json, which the phone app downloads to update the logger over Bluetooth.
 name: Build firmware
 on:
   push:
@@ -18,15 +21,28 @@ jobs:
           arduino-cli config set board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           for i in 1 2 3; do arduino-cli core update-index && arduino-cli core install esp32:esp32@3.3.12 && break; sleep 30; done
           arduino-cli lib install NimBLE-Arduino@2.5.1
+          echo "Bootloader rollback setting:"; grep -rh "CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE" ~/.arduino15/packages/esp32/tools/esp32-arduino-libs/*/esp32/sdkconfig || true
+      - name: Stamp build number
+        run: printf '#pragma once\n#define FW_VERSION %s\n' "$GITHUB_RUN_NUMBER" > firmware/bmx_logger/fw_version.h
       - name: Compile
         run: |
           arduino-cli compile --fqbn esp32:esp32:esp32 --export-binaries firmware/bmx_logger
-          ls firmware/bmx_logger/build/*/
+          ls -l firmware/bmx_logger/build/*/
           cp firmware/bmx_logger/build/*/bmx_logger.ino.merged.bin bmx_logger_merged.bin
-      - name: Publish
+          cp firmware/bmx_logger/build/*/bmx_logger.ino.bin app.bin
+      - name: Publish USB image
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete firmware -y --cleanup-tag || true
-          gh release create firmware bmx_logger_merged.bin --latest=false --title "Firmware (latest)" \
-            --notes "Flash bmx_logger_merged.bin at address 0x0. Built from ${GITHUB_SHA::7}."
+          gh release create firmware bmx_logger_merged.bin --latest=false --title "Firmware build $GITHUB_RUN_NUMBER" \
+            --notes "Flash bmx_logger_merged.bin at address 0x0 over USB. Built from ${GITHUB_SHA::7}. After this, the app can update the logger over Bluetooth."
+      - name: Publish Bluetooth update
+        run: |
+          mkdir out && cp app.bin out/
+          printf '{"version":%s,"size":%s,"sha256":"%s","commit":"%s"}\n' "$GITHUB_RUN_NUMBER" \
+            "$(stat -c %s app.bin)" "$(sha256sum app.bin | cut -d' ' -f1)" "${GITHUB_SHA::7}" > out/fw.json
+          cat out/fw.json
+          cd out && git init -q -b fw && git add . \
+            && git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -qm "Firmware build $GITHUB_RUN_NUMBER" \
+            && git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" fw

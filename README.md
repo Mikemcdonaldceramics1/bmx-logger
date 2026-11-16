@@ -20,7 +20,7 @@ The build runs in the **Actions** tab (about 5 minutes). If a build fails, its l
 | `manifest.webmanifest`, `sw.js`, `icon-*.png` | Lets `index.html` also run as a web app in Chrome (GitHub Pages, optional). |
 | `android_app/` | Wraps `index.html` as an Android app with Capacitor and native Bluetooth. |
 | `.github/workflows/build-apk.yml` | Builds the APK and publishes it as a release. |
-| `firmware/bmx_logger/` | ESP32 Arduino sketch. `firmware/bmx_logger_merged.bin` is ready to flash at 0x0 (also on the "firmware" release, rebuilt by GitHub on every firmware change). |
+| `firmware/bmx_logger/` | ESP32 Arduino sketch. GitHub builds it on every change: the full USB image is on the "firmware" release, and the app can update the logger over Bluetooth. |
 | `tools/` | Simulated runs, analysis test, Bluetooth protocol test, fake Bluetooth logger. |
 
 To change the app, edit `index.html` and push: a new APK is built automatically.
@@ -28,7 +28,7 @@ To change the app, edit `index.html` and push: a new APK is built automatically.
 ## Flash the logger
 
 Open https://espressif.github.io/esptool-js/ in Chrome or Edge on a computer, connect the ESP32,
-flash `firmware/bmx_logger_merged.bin` at address 0x0. Re-flashing erases stored runs.
+flash `bmx_logger_merged.bin` from https://github.com/Mikemcdonaldceramics1/bmx-logger/releases/download/firmware/bmx_logger_merged.bin at address 0x0. Re-flashing over USB erases stored runs. After that, use Settings → Firmware in the app to update over Bluetooth.
 
 From Arduino IDE instead: install "esp32 by Espressif" 3.x and the "NimBLE-Arduino" library by
 h2zero (tested 2.5.1), pick "ESP32 Dev Module", open `firmware/bmx_logger/bmx_logger.ino`, Upload.

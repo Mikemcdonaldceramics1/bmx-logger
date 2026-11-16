@@ -1,7 +1,10 @@
 # BMX logger partition table for 4 MB ESP32 (ESP-WROOM-32)
+# Two app slots so the phone app can update the firmware over Bluetooth (the logger writes the new
+# firmware into the slot it is not running from, then switches). The rest holds 7 run slots.
 # Arduino IDE picks this up automatically because it sits in the sketch folder.
 # Name,    Type, SubType, Offset,   Size
 nvs,       data, nvs,     0x9000,   0x5000
-phy_init,  data, phy,     0xe000,   0x1000
-factory,   app,  factory, 0x10000,  0x180000
-runs,      data, 0x40,    0x190000, 0x270000
+otadata,   data, ota,     0xe000,   0x2000
+app0,      app,  ota_0,   0x10000,  0xE0000
+app1,      app,  ota_1,   0xF0000,  0xE0000
+runs,      data, 0x40,    0x1D0000, 0x230000
