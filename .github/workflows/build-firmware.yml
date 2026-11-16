@@ -1,0 +1,32 @@
+name: Build firmware
+on:
+  push:
+    branches: [main]
+    paths: ['firmware/**', '.github/workflows/build-firmware.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install ESP32 core and NimBLE
+        run: |
+          arduino-cli config init
+          arduino-cli config set board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          for i in 1 2 3; do arduino-cli core update-index && arduino-cli core install esp32:esp32@3.3.12 && break; sleep 30; done
+          arduino-cli lib install NimBLE-Arduino@2.5.1
+      - name: Compile
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32 --export-binaries firmware/bmx_logger
+          ls firmware/bmx_logger/build/*/
+          cp firmware/bmx_logger/build/*/bmx_logger.ino.merged.bin bmx_logger_merged.bin
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete firmware -y --cleanup-tag || true
+          gh release create firmware bmx_logger_merged.bin --latest=false --title "Firmware (latest)" \
+            --notes "Flash bmx_logger_merged.bin at address 0x0. Built from ${GITHUB_SHA::7}."

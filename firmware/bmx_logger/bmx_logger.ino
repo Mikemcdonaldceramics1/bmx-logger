@@ -44,8 +44,8 @@
 
 #define PIN_SDA     21
 #define PIN_SCL     22
-#define PIN_WHEEL   32
-#define PIN_CRANK   33
+#define PIN_WHEEL   33
+#define PIN_CRANK   32
 #define PIN_BUTTON  27
 #define PIN_LED     2
 #define PIN_BATT    35   // battery voltage through a 100k/100k divider (optional)
@@ -989,7 +989,7 @@ static void bleStart() {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  Serial.println("\nBMX logger starting (build: battery level)");
+  Serial.println("\nBMX logger starting (build: sensors swapped)");
 
   pinMode(PIN_LED, OUTPUT);
   pinMode(PIN_BATT, INPUT);
