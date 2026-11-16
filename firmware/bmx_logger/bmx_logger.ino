@@ -40,6 +40,10 @@
 #include "freertos/task.h"
 #include "freertos/stream_buffer.h"
 
+// Declared early so the Arduino builder's auto-generated prototypes compile.
+struct Args;
+struct BleCmd;
+
 // ------------------------------------------------------------------ config
 
 #define PIN_SDA     21
