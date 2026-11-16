@@ -20,7 +20,7 @@ The build runs in the **Actions** tab (about 5 minutes). If a build fails, its l
 | `manifest.webmanifest`, `sw.js`, `icon-*.png` | Lets `index.html` also run as a web app in Chrome (GitHub Pages, optional). |
 | `android_app/` | Wraps `index.html` as an Android app with Capacitor and native Bluetooth. |
 | `.github/workflows/build-apk.yml` | Builds the APK and publishes it as a release. |
-| `firmware/bmx_logger/` | ESP32 Arduino sketch. `firmware/bmx_logger_merged.bin` is ready to flash at 0x0. |
+| `firmware/bmx_logger/` | ESP32 Arduino sketch. `firmware/bmx_logger_merged.bin` is ready to flash at 0x0 (also on the "firmware" release, rebuilt by GitHub on every firmware change). |
 | `tools/` | Simulated runs, analysis test, Bluetooth protocol test, fake Bluetooth logger. |
 
 To change the app, edit `index.html` and push: a new APK is built automatically.
