@@ -21,7 +21,8 @@ jobs:
           arduino-cli config set board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           for i in 1 2 3; do arduino-cli core update-index && arduino-cli core install esp32:esp32@3.3.12 && break; sleep 30; done
           arduino-cli lib install NimBLE-Arduino@2.5.1
-          echo "Bootloader rollback setting:"; grep -rh "CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE" ~/.arduino15/packages/esp32/tools/esp32-arduino-libs/*/esp32/sdkconfig || true
+          echo "Bootloader rollback setting:"
+          find "$(arduino-cli config get directories.data)" -path '*esp32/sdkconfig' -print -exec grep -h "BOOTLOADER_APP_ROLLBACK" {} \; || true
       - name: Stamp build number
         run: printf '#pragma once\n#define FW_VERSION %s\n' "$GITHUB_RUN_NUMBER" > firmware/bmx_logger/fw_version.h
       - name: Compile

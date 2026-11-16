@@ -27,6 +27,18 @@
       c.addEventListener('characteristicvaluechanged', c.__nativeListener);
       await c.startNotifications();
     },
+    async getServices(id) {
+      const chrs = [];
+      for (const u of ['6e7a0002', '6e7a0003', '6e7a0004', '6e7a0005'].map(x => x + '-3b2c-4d1a-9f5e-8b6c4d2a1f00')) {
+        try { const c = await svc.getCharacteristic(u); if (c) chrs.push({ uuid: u, properties: {}, descriptors: [] }); } catch (e) {}
+      }
+      return [{ uuid: SVC, characteristics: chrs }];
+    },
+    async writeWithoutResponse(id, s, chr, dv) {
+      if (!(dv instanceof DataView)) throw new Error('writeWithoutResponse expects a DataView');
+      const c = await svc.getCharacteristic(chr);
+      await c.writeValueWithoutResponse(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength));
+    },
     async write(id, s, chr, dv) {
       if (!(dv instanceof DataView)) throw new Error('write expects a DataView');
       const c = await svc.getCharacteristic(chr);

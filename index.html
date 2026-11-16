@@ -61,6 +61,7 @@ input,select{width:100%;padding:10px;border:1px solid var(--line);border-radius:
 .btn.sec{background:var(--bg);color:var(--ink);border:1px solid var(--line);font-size:15px;padding:12px}
 .btn:disabled{opacity:.45}
 .small{font-size:12px;color:var(--muted)}
+.fwbar{height:8px;background:var(--bg);border-radius:4px;overflow:hidden;margin-top:12px}.fwbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
 .err{color:var(--bad);font-size:13px;margin-top:8px}
 .run{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
 .run:first-child{border-top:0}
@@ -212,6 +213,17 @@ th{color:var(--muted);font-weight:600}
     <p class="note">Each run slot holds about 65 s at 250 Hz, 32 s at 500 Hz, counting the 3 s before the start. The logger keeps the newest 7 runs and overwrites the oldest.</p>
     <button class="btn" id="saveSettings" style="margin-top:12px">Save to logger</button>
     <div class="err" id="setErr"></div>
+  </div>
+  <div class="card" id="fwCard" hidden>
+    <h2>Firmware</h2>
+    <p class="small" id="fwInfo">Connect to the logger to check its firmware.</p>
+    <button class="btn sec" id="fwUpdate" disabled>Update logger</button>
+    <div class="fwbar" id="fwBar" hidden><i id="fwFill"></i></div>
+    <p class="small" id="fwMsg"></p>
+    <label for="fwFile">Or install a firmware file (.bin)</label>
+    <input type="file" id="fwFile" accept=".bin,application/octet-stream">
+    <p class="note">The logger must be disarmed. Keep the app open and the phone near the logger for about a minute. If anything goes wrong, the logger keeps its current firmware.</p>
+    <div class="err" id="fwErr"></div>
   </div>
   <div class="card">
     <h2>Display</h2>
@@ -519,7 +531,8 @@ function setConn(on) {
 
 // ---- Bluetooth link (Chrome on Android). Protocol: see bmx_logger/ble_proto.h
 const BLE_SVC = '6e7a0001-3b2c-4d1a-9f5e-8b6c4d2a1f00', BLE_CMD = '6e7a0002-3b2c-4d1a-9f5e-8b6c4d2a1f00',
-      BLE_RESP = '6e7a0003-3b2c-4d1a-9f5e-8b6c4d2a1f00', BLE_STAT = '6e7a0004-3b2c-4d1a-9f5e-8b6c4d2a1f00';
+      BLE_RESP = '6e7a0003-3b2c-4d1a-9f5e-8b6c4d2a1f00', BLE_STAT = '6e7a0004-3b2c-4d1a-9f5e-8b6c4d2a1f00',
+      BLE_OTA = '6e7a0005-3b2c-4d1a-9f5e-8b6c4d2a1f00';
 const ble = {
   dev: null, cmd: null, connected: false, linking: false, queue: Promise.resolve(), pending: null,
   bufs: { resp: [], stat: [] },
@@ -562,6 +575,12 @@ const ble = {
     await C.startNotifications(id, BLE_SVC, BLE_RESP, v => this.frame(v, 'resp'));
     await C.startNotifications(id, BLE_SVC, BLE_STAT, v => this.frame(v, 'stat'));
     this.write = bytes => C.write(id, BLE_SVC, BLE_CMD, new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+    this.writeOta = null;                  // firmware too old for Bluetooth updates unless it has the OTA characteristic
+    try {
+      const svcs = await C.getServices(id);
+      if (svcs.some(s => s.uuid === BLE_SVC && s.characteristics.some(c => c.uuid === BLE_OTA)))
+        this.writeOta = bytes => C.writeWithoutResponse(id, BLE_SVC, BLE_OTA, new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+    } catch (e) {}
   },
   async linkWeb() {
     {
@@ -582,13 +601,15 @@ const ble = {
       await resp.startNotifications();
       await stat.startNotifications();
       this.write = bytes => this.cmd.writeValueWithResponse(bytes);
+      this.writeOta = null;
+      try { const ota = await svc.getCharacteristic(BLE_OTA); this.writeOta = bytes => ota.writeValueWithoutResponse(bytes); } catch (e) {}
     }
   },
   dropped() {
     const was = this.connected;
     this.connected = false; this.bufs = { resp: [], stat: [] };
     if (this.pending) { const p = this.pending; this.pending = null; clearTimeout(p.timer); p.reject(new Error('Bluetooth disconnected')); }
-    setConn(false);
+    setConn(false); fw.render();
     if (was) toast('Logger disconnected. Reconnecting...');
     this.retrySoon(1500);
   },
@@ -648,10 +669,123 @@ async function bleApi(path, params, opts) {
 }
 function onLinkUp() {
   toast('Connected to BMX-Logger');
+  fw.render(); if (!fw.latest) fw.check();
   loadSettings();
   if ($('tab-runs').classList.contains('active')) loadRuns();
 }
-function onStatus(s) { if (!s || !s.state) return; lastStatus = s; renderStatus(s); }
+function onStatus(s) {
+  if (s && !s.state && (typeof s.ota === 'number' || s.otaErr)) { fw.onProgress(s); return; }
+  if (!s || !s.state) return;
+  const fwChanged = !lastStatus || lastStatus.fw !== s.fw;
+  lastStatus = s; renderStatus(s);
+  if (fwChanged) fw.render();
+}
+
+// ---- Firmware update over Bluetooth (protocol: see "OTA" in bmx_logger.ino)
+// GitHub Actions publishes the newest build to the fw branch; raw.githubusercontent.com allows the app to fetch it.
+const FW_URL = 'https://raw.githubusercontent.com/Mikemcdonaldceramics1/bmx-logger/fw/';
+const fw = {
+  latest: null, job: null,
+  async check() {
+    try {
+      const r = await fetch(FW_URL + 'fw.json?t=' + Date.now(), { cache: 'no-store' });
+      if (r.ok) this.latest = await r.json();
+    } catch (e) {}
+    this.render();
+  },
+  render() {
+    $('fwCard').hidden = MODE !== 'ble';
+    if (MODE !== 'ble') return;
+    const cur = lastStatus ? lastStatus.fw : undefined, L = this.latest;
+    let info, can = false;
+    if (!ble.connected) info = 'Connect to the logger to check its firmware.';
+    else if (cur === undefined || !ble.writeOta) info = 'This logger\'s firmware is too old for Bluetooth updates. Flash it once over USB (see the README), then update from here.';
+    else {
+      info = `On the logger: ${cur ? 'build ' + cur : 'local build'}. Latest: ${L ? 'build ' + L.version : 'unknown (no internet?)'}.`;
+      if (L && cur >= L.version) info += ' Up to date.';
+      can = true;
+    }
+    $('fwInfo').textContent = info;
+    const busy = !!this.job;
+    $('fwUpdate').disabled = !can || busy || !L;
+    $('fwUpdate').textContent = L && cur !== undefined && cur >= L.version ? `Reinstall build ${L.version}` : L ? `Update to build ${L.version}` : 'Update logger';
+    $('fwFile').disabled = !can || busy;
+  },
+  show(frac, msg) {
+    $('fwBar').hidden = frac == null; if (frac != null) $('fwFill').style.width = (100 * frac).toFixed(1) + '%';
+    if (msg != null) $('fwMsg').textContent = msg;
+  },
+  onProgress(s) {
+    const j = this.job; if (!j) return;
+    if (s.otaErr) j.err = s.otaErr;
+    else { j.acked = s.ota; if (s.done) j.done = true; this.show(j.acked / j.size, `Installing... ${Math.round(100 * j.acked / j.size)}%`); }
+    if (j.wake) { const w = j.wake; j.wake = null; w(); }
+  },
+  wait(ms) {
+    const j = this.job;
+    return new Promise((res, rej) => {
+      j.wake = res;
+      setTimeout(() => { if (j.wake === res) { j.wake = null; rej(new Error('The logger stopped answering')); } }, ms);
+    });
+  },
+  async install(bytes, expectSha) {
+    if (!ble.connected || !ble.writeOta) throw new Error('Not connected to the logger');
+    if (lastStatus && lastStatus.state !== 'idle') throw new Error('Disarm the logger first');
+    const sha = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
+    if (expectSha && sha !== expectSha) throw new Error('The download was damaged. Try again.');
+    if (bytes[0] !== 0xE9) throw new Error('That file is not ESP32 firmware (use the app .bin, not the merged USB image)');
+    const m = await ble.request(`ota?size=${bytes.length}&sha=${sha}`);
+    if (!m || m.ok === false) throw new Error((m && m.err) || 'The logger refused the update');
+    const chunk = Math.max(20, Math.min((m.mtu || 23) - 3, 500)), win = m.window || 8192;
+    const j = this.job = { size: bytes.length, acked: 0, done: false, err: null, wake: null };
+    const t0 = Date.now();
+    try {
+      let sent = 0;
+      while (sent < bytes.length) {
+        if (j.err) throw new Error(j.err);
+        if (!ble.connected) throw new Error('Bluetooth disconnected');
+        if (sent - j.acked >= win) { await this.wait(15000); continue; }
+        const k = Math.min(chunk, bytes.length - sent);
+        await ble.writeOta(bytes.slice(sent, sent + k));
+        sent += k;
+      }
+      while (!j.done) { if (j.err) throw new Error(j.err); await this.wait(20000); }
+      this.show(1, `Installed in ${Math.round((Date.now() - t0) / 1000)} s. The logger is restarting and will reconnect.`);
+    } catch (e) {
+      if (ble.connected) ble.request('otacancel').catch(() => {});
+      throw e;
+    } finally { this.job = null; }
+  },
+  async run(getBytes) {
+    $('fwErr').textContent = '';
+    this.job = { pending: true }; this.render();
+    try {
+      this.show(0, 'Getting the firmware...');
+      const [bytes, sha] = await getBytes();
+      this.show(0, 'Starting...');
+      this.job = null;
+      await this.install(bytes, sha);
+    } catch (e) {
+      this.job = null;
+      this.show(null, '');
+      $('fwErr').textContent = 'Update failed: ' + e.message + '. The logger kept its current firmware.';
+    }
+    this.render();
+  }
+};
+$('fwUpdate').onclick = () => fw.run(async () => {
+  const L = fw.latest;
+  const r = await fetch(FW_URL + 'app.bin?v=' + L.version, { cache: 'no-store' });
+  if (!r.ok) throw new Error('Could not download the firmware (HTTP ' + r.status + ')');
+  const b = new Uint8Array(await r.arrayBuffer());
+  if (b.length !== L.size) throw new Error('The download was incomplete. Try again.');
+  return [b, L.sha256];
+});
+$('fwFile').onchange = e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (f) fw.run(async () => [new Uint8Array(await f.arrayBuffer()), null]);
+};
+fw.render();
 $('bleBtn').onclick = async () => {
   try {
     if (ble.dev && !ble.connected) { try { await ble.link(); return; } catch (e) {} }
