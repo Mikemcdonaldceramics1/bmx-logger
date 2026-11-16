@@ -22,7 +22,7 @@ jobs:
           for i in 1 2 3; do arduino-cli core update-index && arduino-cli core install esp32:esp32@3.3.12 && break; sleep 30; done
           arduino-cli lib install NimBLE-Arduino@2.5.1
           echo "Bootloader rollback setting:"
-          find "$(arduino-cli config get directories.data)" -path '*esp32/sdkconfig' -print -exec grep -h "BOOTLOADER_APP_ROLLBACK" {} \; || true
+          grep -r --include='sdkconfig*' "APP_ROLLBACK_ENABLE" "$(arduino-cli config get directories.data)/packages/esp32/tools" | grep -v "/esp32[a-z][0-9]*/" | head -5 || true
       - name: Stamp build number
         run: printf '#pragma once\n#define FW_VERSION %s\n' "$GITHUB_RUN_NUMBER" > firmware/bmx_logger/fw_version.h
       - name: Compile
