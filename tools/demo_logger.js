@@ -83,9 +83,10 @@ window.BMX_DEMO = true;
   }
 
   // two example runs so the Analyze tab has something to show on first open
-  const now = Math.floor(Date.now() / 1000);
-  addRun('44/16 example', 44, 16, 11, now - 1500);
-  addRun('41/16 example', 41, 16, 12, now - 900);
+  // fixed dates so the phone history recognises them as the same runs on every visit
+  const day = Math.floor(Date.now() / 86400000) * 86400 + 15 * 3600;
+  addRun('44/16 example', 44, 16, 11, day);
+  addRun('41/16 example', 41, 16, 12, day + 600);
   try { if (!localStorage.getItem('sel')) localStorage.setItem('sel', JSON.stringify(['dev:1', 'dev:2'])); } catch (e) {}
 
   // Race-day timeline: arm -> erase slot -> armed (rider rolls to the gate and waits) -> gate drops,
