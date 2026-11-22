@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BMX Logger Installer</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --ink:#15181d; --muted:#5d6470; --accent:#e4572e; --line:#e3e6ea; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#101215; --card:#1a1d22; --ink:#eef0f3; --muted:#9aa1ad; --line:#2b2f37; } }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:560px; margin:0 auto; padding:32px 16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:24px; }
+  h1 { margin:0 0 4px; font-size:26px; } .muted { color:var(--muted); font-size:14px; }
+  ol { padding-left:20px; } li { margin:6px 0; }
+  esp-web-install-button button[slot="activate"] { margin:18px 0 6px; width:100%; border:0; border-radius:12px; padding:16px;
+    font:700 18px system-ui,sans-serif; background:var(--accent); color:#fff; cursor:pointer; }
+  .warn { background:#fff4e5; color:#7a4100; border-radius:10px; padding:12px; font-size:14px; }
+  @media (prefers-color-scheme: dark) { .warn { background:#3a2a12; color:#ffd59a; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>BMX Logger installer</h1>
+    <p class="muted" id="ver">Installs the latest logger firmware over USB.</p>
+    <ol>
+      <li>Plug the logger into this computer with the USB cable.</li>
+      <li>Close Arduino IDE or anything else using the board.</li>
+      <li>Click <b>Install</b>, pick the <b>CP2102 / Silicon Labs</b> port, then <b>Install</b> again.</li>
+    </ol>
+    <esp-web-install-button manifest="manifest.json">
+      <button slot="activate">Install</button>
+      <span slot="unsupported"><p class="warn">This browser can't talk to USB devices. Open this page in <b>Chrome</b> or <b>Edge</b> on a computer.</p></span>
+      <span slot="not-allowed"><p class="warn">Open this page over https.</p></span>
+    </esp-web-install-button>
+    <p class="muted">If it can't connect: hold the <b>BOOT</b> button on the board, tap <b>EN</b>, release BOOT, and try again.
+      Installing over USB clears the runs and settings stored on the logger. After this, the phone app can update the
+      logger over Bluetooth (Settings → Firmware).</p>
+  </div>
+</main>
+<script>
+  fetch('fw.json', { cache: 'no-store' }).then(r => r.json()).then(j => {
+    document.getElementById('ver').textContent = `Installs logger firmware build ${j.version} over USB.`;
+  }).catch(() => {});
+</script>
+</body>
+</html>

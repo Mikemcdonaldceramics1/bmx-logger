@@ -1,11 +1,12 @@
 # Builds the ESP32 firmware on every firmware change (or by hand from the Actions tab).
 #  - "firmware" release: bmx_logger_merged.bin, the full image to flash over USB at 0x0.
-#  - "fw" branch: app.bin + fw.json, which the phone app downloads to update the logger over Bluetooth.
+#  - "fw" branch: app.bin + fw.json, which the phone app downloads to update the logger over Bluetooth,
+#    plus the one-click USB installer page (GitHub Pages): https://mikemcdonaldceramics1.github.io/bmx-logger/
 name: Build firmware
 on:
   push:
     branches: [main]
-    paths: ['firmware/**', '.github/workflows/build-firmware.yml']
+    paths: ['firmware/**', 'tools/flasher/**', '.github/workflows/build-firmware.yml']
   workflow_dispatch:
 permissions:
   contents: write
@@ -40,7 +41,9 @@ jobs:
             --notes "Flash bmx_logger_merged.bin at address 0x0 over USB. Built from ${GITHUB_SHA::7}. After this, the app can update the logger over Bluetooth."
       - name: Publish Bluetooth update
         run: |
-          mkdir out && cp app.bin out/
+          mkdir out && cp app.bin bmx_logger_merged.bin tools/flasher/index.html out/
+          printf '{"name":"BMX Logger","version":"%s","new_install_prompt_erase":false,"builds":[{"chipFamily":"ESP32","parts":[{"path":"bmx_logger_merged.bin","offset":0}]}]}\n' "$GITHUB_RUN_NUMBER" > out/manifest.json
+          touch out/.nojekyll
           printf '{"version":%s,"size":%s,"sha256":"%s","commit":"%s"}\n' "$GITHUB_RUN_NUMBER" \
             "$(stat -c %s app.bin)" "$(sha256sum app.bin | cut -d' ' -f1)" "${GITHUB_SHA::7}" > out/fw.json
           cat out/fw.json
