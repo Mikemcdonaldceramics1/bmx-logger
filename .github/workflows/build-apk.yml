@@ -27,8 +27,8 @@ jobs:
 
       # One signing key for every build, so a new APK installs over the old one.
       # The first run creates it and saves it in the repository.
-      - name: Analysis regression tests (start timing on simulated gate starts)
-        run: node tools/test_start_timing.js
+      - name: Analysis regression tests (simulated gate starts and laps)
+        run: node tools/test_start_timing.js && node tools/test_lap_analysis.js
 
       - name: Signing key
         run: |

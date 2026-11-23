@@ -83,6 +83,17 @@ th{color:var(--muted);font-weight:600}
 .legend i{display:inline-block;width:12px;height:3px;border-radius:2px;vertical-align:middle;margin-right:4px}
 .legend i.band{height:10px;width:12px}
 .note{font-size:12px;color:var(--muted);margin-top:6px}
+.seg{display:flex;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:12px;position:sticky;top:calc(58px + env(safe-area-inset-top,0px));z-index:3}
+.seg button{flex:1;border:0;border-radius:9px;padding:10px 4px;font:600 14px system-ui,sans-serif;background:none;color:var(--muted)}
+.seg button.on{background:var(--accent);color:var(--accent-ink)}
+.seg.small{position:static;margin:0 0 8px;padding:3px}.seg.small button{padding:6px 4px;font-size:13px}
+.view{display:none}.view.on{display:block}
+pre.report{font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre;margin:0;background:var(--bg);border-radius:8px;padding:12px;overflow-x:auto}
+.tlbox{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:8px}
+.tlbox canvas{display:block;touch-action:pan-x pan-y}
+#rp{width:100%;height:280px;display:block;border-radius:10px;background:var(--bg);touch-action:pan-y}
+input[type=range]{padding:0;border:0;background:none;accent-color:var(--accent);height:32px}
+.ctl{display:flex;gap:8px;align-items:center;margin-top:10px}.ctl>*{flex:1}.ctl .btn{padding:10px}
 </style>
 </head>
 <body>
@@ -152,18 +163,60 @@ th{color:var(--muted);font-weight:600}
 <section class="tab" id="tab-analyze">
   <div id="anaEmpty" class="card"><p class="small">Select one or more runs on the Runs tab, then tap Analyze selected.</p></div>
   <div id="anaBody" style="display:none">
-    <div class="card"><h2>Summary</h2><div class="scroll" id="summary"></div>
-      <p class="note" id="sumNote"></p></div>
-    <div class="card"><h2>Speed vs distance</h2><div class="readout" id="ro-sd"></div><div class="chart"><canvas id="c-sd"></canvas></div><div class="legend" id="lg-sd"></div>
-      <p class="note">The curve that sits higher early on is the gearing that rolls out faster.</p></div>
-    <div class="card">
-      <h2>Run detail</h2>
-      <select id="detailSel"></select>
-      <div style="margin-top:12px" class="readout" id="ro-sc"></div><div class="chart"><canvas id="c-sc"></canvas></div><div class="legend" id="lg-sc"></div>
-      <div style="margin-top:14px" class="readout" id="ro-pi"></div><div class="chart"><canvas id="c-pi"></canvas></div><div class="legend" id="lg-pi"></div>
-      <div style="margin-top:14px" class="readout" id="ro-ag"></div><div class="chart"><canvas id="c-ag"></canvas></div><div class="legend" id="lg-ag"></div>
-      <div class="err" id="detailWarn"></div>
-      <button class="btn sec" id="csvBtn" style="margin-top:12px">Export this run as CSV</button>
+    <div class="seg" id="anaSeg">
+      <button type="button" data-v="report" class="on">Report</button><button type="button" data-v="timeline">Timeline</button>
+      <button type="button" data-v="compare">Compare</button><button type="button" data-v="replay">Replay</button>
+    </div>
+    <div class="card" id="runPick"><label for="detailSel" style="margin-top:0">Run</label><select id="detailSel"></select></div>
+
+    <div class="view on" id="v-report">
+      <div class="card"><h2>Lap report</h2>
+        <pre class="report" id="report"></pre>
+        <div class="ctl"><button class="btn sec" id="copyRep" type="button">Copy text</button><button class="btn sec" id="saveRep" type="button">Save .txt</button></div>
+        <div class="err" id="detailWarn"></div>
+      </div>
+    </div>
+
+    <div class="view" id="v-timeline">
+      <div class="card"><h2>Timeline</h2>
+        <div class="seg small" id="tlAxis"><button type="button" data-v="time" class="on">By time</button><button type="button" data-v="dist">By position</button></div>
+        <div class="ctl" style="margin:0 0 8px"><label for="tlZoom" style="flex:0 0 auto;margin:0">Zoom</label>
+          <select id="tlZoom"><option value="1">Whole lap</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select></div>
+        <div class="readout" id="tlRead">Tap or drag on the timeline to read any moment.</div>
+        <div class="tlbox" id="tlBox"><canvas id="tl"></canvas></div>
+        <div class="legend" id="tlLegend"></div>
+        <p class="note">Obstacles, airtime, pumping and elevation are estimated from the motion sensor; speed and pedal revolutions come from the magnets. Speed during airtime is estimated (the wheel spins freely in the air).</p>
+      </div>
+      <div class="card"><h2>Raw data</h2>
+        <div class="readout" id="ro-sc"></div><div class="chart"><canvas id="c-sc"></canvas></div><div class="legend" id="lg-sc"></div>
+        <div style="margin-top:14px" class="readout" id="ro-pi"></div><div class="chart"><canvas id="c-pi"></canvas></div><div class="legend" id="lg-pi"></div>
+        <div style="margin-top:14px" class="readout" id="ro-ag"></div><div class="chart"><canvas id="c-ag"></canvas></div><div class="legend" id="lg-ag"></div>
+        <button class="btn sec" id="csvBtn" style="margin-top:12px">Export this run as CSV</button>
+      </div>
+    </div>
+
+    <div class="view" id="v-compare">
+      <div class="card"><h2>Summary</h2><div class="scroll" id="summary"></div>
+        <p class="note" id="sumNote"></p></div>
+      <div class="card"><h2>Time gained or lost</h2>
+        <label for="refSel" style="margin-top:0">Compared with</label><select id="refSel"></select>
+        <div style="margin-top:12px" class="readout" id="ro-gap"></div><div class="chart"><canvas id="c-gap"></canvas></div><div class="legend" id="lg-gap"></div>
+        <p class="note">Below zero = ahead of that run at that point on the track; above = behind. Where the line drops, that run gained time there.</p></div>
+      <div class="card"><h2>Obstacle by obstacle</h2><div class="scroll" id="obsCmp"></div>
+        <p class="note">Speed going into and coming out of each obstacle, matched by position on the track.</p></div>
+      <div class="card"><h2>Speed vs distance</h2><div class="readout" id="ro-sd"></div><div class="chart"><canvas id="c-sd"></canvas></div><div class="legend" id="lg-sd"></div>
+        <p class="note">The curve that sits higher early on is the gearing that rolls out faster.</p></div>
+    </div>
+
+    <div class="view" id="v-replay">
+      <div class="card"><h2>Replay</h2>
+        <canvas id="rp"></canvas>
+        <input type="range" id="rpScrub" min="0" max="1000" value="0" aria-label="Replay position">
+        <div class="ctl" style="margin-top:4px"><button class="btn" id="rpPlay" type="button">Play</button>
+          <select id="rpSpeed" aria-label="Replay speed"><option value="0.25">¼ speed</option><option value="0.5">½ speed</option><option value="1" selected>Real time</option><option value="2">2× speed</option></select></div>
+        <label for="ghostSel">Ghost (another run to race against)</label><select id="ghostSel"></select>
+        <p class="note">Side view, height exaggerated 2×. The crank turns with the real pedal revolutions (green = pedalling). Track shape, airtime and pumping are estimated from the motion sensor.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -237,6 +290,9 @@ th{color:var(--muted);font-weight:600}
     <select id="units"><option value="imperial">mph and feet</option><option value="metric">km/h and meters</option></select>
     <label for="splits">Split distances (comma separated)</label>
     <input id="splits">
+    <label for="finishD" id="finishLbl">Finish line distance from the gate</label>
+    <input id="finishD" inputmode="decimal" placeholder="leave empty to time start to stop">
+    <p class="note">Measure the track from the gate to the finish line once (or read it off a run that crossed it). Lap times are taken at that distance.</p>
   </div>
 </section>
 </main>
@@ -306,7 +362,7 @@ const BMX = (() => {
     return s[idx];
   }
 
-  const VERSION = 2;   // bump when results change, so stored results can be told apart
+  const VERSION = 3;   // bump when results change, so stored results can be told apart
 
   // Motion sensor frame from the still period at the start of the record: up (gravity), forward, pitch axis.
   // Also gyro bias, missing samples, and forward acceleration with gravity removed using gyro-tracked pitch.
@@ -392,6 +448,214 @@ const BMX = (() => {
     const b = (n * sxy - sx * sy) / (n * sxx - sx * sx), a = (sy - b * sx) / n;
     let rss = 0; for (let i = 0; i < n; i++) rss += (ys[i] - a - b * xs[i]) ** 2;
     return { a, b, rms: Math.sqrt(rss / n) };
+  }
+
+  // ---- the lap: track slope and elevation, airtime, obstacles, pumping, g-force events, stats.
+  // Everything here is estimated from a frame-mounted motion sensor plus the wheel and crank magnets.
+  function lerpArr(xs, ys, x) {
+    const n = xs.length; if (!n) return 0;
+    if (x <= xs[0]) return ys[0]; if (x >= xs[n - 1]) return ys[n - 1];
+    let lo = 0, hi = n - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (xs[m] <= x) lo = m; else hi = m; }
+    return ys[lo] + (x - xs[lo]) / ((xs[hi] - xs[lo]) || 1) * (ys[hi] - ys[lo]);
+  }
+  function trackAnalysis(run, res, fr, o) {
+    const I = run.imu, W = res.wheel;
+    if (!W || !fr || !fr.ok || I.t.length < 50) return;
+    const n = I.t.length, t0 = res.t0, end = res.moveEnd, D2R = Math.PI / 180;
+    const tr = Array.from(I.t, x => x - t0);
+    const dAt = tt => (tt <= 0 ? 0 : lerpArr(W.t, W.d, tt));
+    const vAt = tt => (tt <= 0 ? 0 : lerpArr(W.t, W.v, tt));
+    const gm = new Float64Array(n); for (let i = 0; i < n; i++) gm[i] = Math.hypot(I.ax[i], I.ay[i], I.az[i]);
+
+    // airtime: total g (smoothed over 30 ms) under 0.35 for at least 0.1 s (free fall reads close to 0 g)
+    const gs = new Float64Array(n), kg = Math.max(1, Math.round(0.015 * fr.rate));
+    for (let i = 0; i < n; i++) { let a = 0, m = 0; for (let j = Math.max(0, i - kg); j <= Math.min(n - 1, i + kg); j++) { a += gm[j]; m++; } gs[i] = a / m; }
+    const air = [];
+    for (let i = 0, a = -1; i <= n; i++) {
+      const low = i < n && gs[i] < 0.35 && tr[i] > 0 && tr[i] < end;
+      if (low && a < 0) a = i;
+      if (!low && a >= 0) {
+        const A = tr[a], B = tr[i - 1], last = air[air.length - 1];
+        if (last && A - last.b < 0.05) last.b = B; else air.push({ a: A, b: B });
+        a = -1;
+      }
+    }
+    for (let k = air.length - 1; k >= 0; k--) if (air[k].b - air[k].a < 0.1) air.splice(k, 1);
+    const inAir = tt => air.some(x => tt >= x.a - 0.02 && tt <= x.b + 0.02);
+
+    // pitch of the sensor's forward axis vs horizontal (it was horizontal at the gate): gyro, corrected toward
+    // gravity on the ground after removing the bike's own acceleration (from the wheel)
+    const [ux, uy, uz] = fr.u, [fx, fy, fz] = fr.f, [px, py, pz] = fr.p, [bx, by, bz] = fr.bias;
+    const phi = new Float64Array(n), prate = new Float64Array(n);
+    let p = 0;
+    for (let i = 0; i < n; i++) {
+      const dt = i ? Math.min(0.05, I.t[i] - I.t[i - 1]) : 0;
+      prate[i] = (I.gx[i] - bx) * px + (I.gy[i] - by) * py + (I.gz[i] - bz) * pz;
+      p += prate[i] * dt;
+      const af = I.ax[i] * fx + I.ay[i] * fy + I.az[i] * fz, au = I.ax[i] * ux + I.ay[i] * uy + I.az[i] * uz;
+      const tt = tr[i];
+      if (i < fr.calN) p = Math.atan2(af, au) / D2R;
+      else if (!inAir(tt) && gm[i] > 0.6 && gm[i] < 1.6) {
+        const at = tt > 0 && tt < end ? (vAt(tt + 0.15) - vAt(tt - 0.15)) / 0.3 / 9.81 : 0;
+        p += (Math.atan2(af - at, au) / D2R - p) * Math.min(1, dt / 1.0);
+      }
+      phi[i] = p;
+    }
+    // level reference: the frame's pitch on flat ground. Best: standing still after the finish; otherwise the
+    // most common pitch while riding (most of a track is flat).
+    let off = null, levelFrom = '';
+    { const xs = []; for (let i = 0; i < n; i++) if (tr[i] > end + 0.6 && gm[i] > 0.9 && gm[i] < 1.1) xs.push(phi[i]);
+      if (xs.length > 0.5 * fr.rate) { xs.sort((a, b) => a - b); off = xs[xs.length >> 1]; levelFrom = 'standing still after the run'; } }
+    if (off == null) {
+      const xs = []; for (let i = 0; i < n; i += 2) if (tr[i] > 1 && tr[i] < end && !inAir(tr[i])) xs.push(phi[i]);
+      if (xs.length) { const bins = new Map(); for (const x of xs) { const b = Math.round(x); bins.set(b, (bins.get(b) || 0) + 1); }
+        const top = [...bins.entries()].sort((a, b) => b[1] - a[1])[0][0]; const near = xs.filter(x => Math.abs(x - top) < 2).sort((a, b) => a - b);
+        off = near[near.length >> 1]; levelFrom = 'the most common pitch while riding'; }
+      else off = 0;
+    }
+    const slope = Float64Array.from(phi, x => x - off);          // track slope under the bike, degrees (+ = uphill)
+    const c = Math.cos(off * D2R), sn = Math.sin(off * D2R);
+    const nb = [ux * c + fx * sn, uy * c + fy * sn, uz * c + fz * sn];   // frame's "up" axis
+    const gn = Float64Array.from(I.t, (_, i) => I.ax[i] * nb[0] + I.ay[i] * nb[1] + I.az[i] * nb[2]);   // force pressing into the frame, g
+    // rider push (estimated): what is left of that force after gravity and the track's curvature
+    // (curvature force = speed x pitch rate), smoothed over 60 ms
+    const pushRaw = Float64Array.from(I.t, (_, i) => {
+      const tt = tr[i]; if (tt <= 0 || tt > end) return 0;
+      return gn[i] - Math.cos(slope[i] * D2R) - vAt(tt) * prate[i] * D2R / 9.81;
+    });
+    const push = new Float64Array(n), kw = Math.max(1, Math.round(0.03 * fr.rate));
+    { let acc = 0, m = 0; const q = []; for (let i = 0; i < n; i++) { q.push(pushRaw[i]); acc += pushRaw[i]; if (q.length > 2 * kw + 1) acc -= q.shift(); push[Math.max(0, i - kw)] = acc / q.length; } }
+
+    // elevation along the track (on the ground only), then levelled so the finish matches the bottom of the start hill
+    const prof = { d: [0], h: [0] };
+    let hh = 0, lastD = 0;
+    for (let i = 0; i < n; i++) {
+      const tt = tr[i]; if (tt <= 0 || tt > end) continue;
+      const d = dAt(tt), ds = d - lastD; lastD = d;
+      if (!inAir(tt)) hh += Math.sin(slope[i] * D2R) * ds;
+      if (d - prof.d[prof.d.length - 1] >= 0.25) { prof.d.push(d); prof.h.push(hh); }
+    }
+    // bottom of the start hill: first point after a descent where the slope eases off for 2 m
+    const slopeAtD = d => lerpArr(prof.d.slice(1), prof.d.slice(1).map((x, k) => Math.atan2(prof.h[k + 1] - prof.h[k], prof.d[k + 1] - prof.d[k]) / D2R), d);
+    let dBottom = 0, wasDown = false;
+    for (let k = 1; k < prof.d.length - 8; k++) {
+      const sl = (prof.h[k + 8] - prof.h[k]) / (prof.d[k + 8] - prof.d[k]);
+      if (sl < -0.1) wasDown = true;
+      if (wasDown && sl > -0.04 && prof.d[k] > 3) { dBottom = prof.d[k]; break; }
+      if (prof.d[k] > 40) break;
+    }
+    const hBottom = lerpArr(prof.d, prof.h, dBottom), dEnd = prof.d[prof.d.length - 1], hEnd = prof.h[prof.h.length - 1];
+    if (dEnd > dBottom + 20) for (let k = 0; k < prof.d.length; k++) if (prof.d[k] > dBottom) prof.h[k] -= (hEnd - hBottom) * (prof.d[k] - dBottom) / (dEnd - dBottom);
+    for (let k = 0; k < prof.h.length; k++) prof.h[k] -= hBottom;        // 0 = bottom of the start hill
+    let gain = 0, loss = 0, ref = prof.h[0];
+    for (const x of prof.h) { if (x - ref > 0.1) { gain += x - ref; ref = x; } else if (ref - x > 0.1) { loss += ref - x; ref = x; } }
+
+    // obstacles: an up face (slope > 6 degrees) followed by a back side (< -6 degrees) within a few meters
+    const sm = (k, w) => { let a = 0, m = 0; for (let j = Math.max(1, k - w); j <= Math.min(prof.d.length - 1, k + w); j++) { a += (prof.h[j] - prof.h[j - 1]) / (prof.d[j] - prof.d[j - 1]); m++; } return Math.atan(a / m) / D2R; };
+    const sl = prof.d.map((_, k) => (k ? sm(k, 2) : 0));
+    const runsOf = test => { const out = []; let a = -1; for (let k = 0; k <= sl.length; k++) { const on = k < sl.length && prof.d[k] > dBottom + 1 && test(sl[k]); if (on && a < 0) a = k; if (!on && a >= 0) { if (prof.d[k - 1] - prof.d[a] >= 0.5) out.push({ a: prof.d[a], b: prof.d[k - 1] }); a = -1; } } return out; };
+    const faces = runsOf(x => x > 6), backs = runsOf(x => x < -6);
+    const tAtD = d => lerpArr(W.d, W.t, d);
+    const obstacles = [];
+    for (const f of faces) {
+      const b = backs.find(x => x.a >= f.b - 0.3 && x.a - f.b < 7);
+      if (!b) continue;
+      if (obstacles.length && obstacles[obstacles.length - 1].dEnd > f.a) continue;
+      const ta = tAtD(f.a), tb = tAtD(b.b);
+      const airIn = air.find(x => x.a < tb + 0.1 && x.b > ta - 0.1);
+      const top = lerpArr(prof.d, prof.h, f.b), base = lerpArr(prof.d, prof.h, f.a);   // height of the face
+      obstacles.push({ type: airIn ? 'jump' : b.a - f.b > 2.5 ? 'table' : 'roller', dStart: f.a, dTop: f.b, dBack: b.a, dEnd: b.b, tStart: ta, tEnd: tb,
+        height: Math.max(0, top - base) });
+    }
+    // jumps where the face/back were not both seen (the wheel keeps counting in the air): use the airtime
+    for (const a of air) if (!obstacles.some(x => x.tStart < a.b + 0.1 && x.tEnd > a.a - 0.1))
+      obstacles.push({ type: 'jump', dStart: dAt(a.a) - 2, dTop: dAt(a.a), dBack: dAt(a.b), dEnd: dAt(a.b) + 2, tStart: tAtD(dAt(a.a) - 2), tEnd: tAtD(dAt(a.b) + 2), height: null });
+    obstacles.sort((a, b) => a.dStart - b.dStart);
+    obstacles.forEach((x, k) => { x.n = k + 1; });
+
+    // pedalling at a given time (crank turning)
+    const bands = res.bands || [];
+    const pedaling = tt => bands.some(b => b.state === 'pedal' && tt >= b.a && tt <= b.b);
+
+    // pumping (estimated): coasting on a back side (slope below -3 degrees), the rider pressing the frame down
+    // 0.3 g or more beyond gravity and the track's curvature, for 0.1 s or more. Landings are excluded.
+    const pumps = [];
+    { let a = -1;
+      for (let i = 0; i <= n; i++) {
+        const tt = i < n ? tr[i] : Infinity;
+        const ok = i < n && tt > 0.5 && tt < end && !inAir(tt) && !air.some(x => tt > x.b && tt - x.b < 0.3) && push[i] > 0.3 && slope[i] < -3 && !pedaling(tt);   // on a back side
+        if (ok && a < 0) a = i;
+        if (!ok && a >= 0) {
+          const A = tr[a], B = tr[i - 1], last = pumps[pumps.length - 1];
+          let pk = 0, ex = 0; for (let j = a; j < i; j++) { pk = Math.max(pk, gn[j]); ex += push[j]; }
+          ex /= (i - a);                                  // average push over the pump
+          if (last && A - last.b < 0.08) { last.push = (last.push * (last.b - last.a) + ex * (B - A)) / (B - last.a); last.b = B; last.peak = Math.max(last.peak, pk); }
+          else pumps.push({ a: A, b: B, peak: pk, push: ex });
+          a = -1;
+        }
+      }
+      for (let k = pumps.length - 1; k >= 0; k--) if (pumps[k].b - pumps[k].a < 0.1) pumps.splice(k, 1);
+      for (const q of pumps) { q.dA = dAt(q.a); q.dB = dAt(q.b); q.dv = vAt(q.b + 0.1) - vAt(q.a); const ob = obstacles.find(x => q.a >= x.tStart - 0.3 && q.a <= x.tEnd + 0.5); q.obstacle = ob ? ob.n : null; }
+    }
+
+    // g-force events: peaks over 1.8 g (landing / pump / compression) and airtime
+    const gEvents = [];
+    for (let i = 1; i < n - 1; i++) {
+      const tt = tr[i];
+      if (tt <= 0 || tt > end || gm[i] < 1.8 || gm[i] < gm[i - 1] || gm[i] < gm[i + 1]) continue;
+      const last = gEvents[gEvents.length - 1];
+      if (last && tt - last.t < 0.2) { if (gm[i] > last.g) { last.t = tt; last.g = gm[i]; } continue; }
+      gEvents.push({ t: tt, g: gm[i] });
+    }
+    for (const e of gEvents) {
+      e.d = dAt(e.t);
+      e.type = air.some(x => e.t >= x.b && e.t - x.b < 0.35) ? 'landing' : pumps.some(q => e.t >= q.a - 0.05 && e.t <= q.b + 0.05) ? 'pump' : 'compression';
+    }
+    for (const a of air) {
+      let mn = 9; for (let i = 0; i < n; i++) if (tr[i] >= a.a && tr[i] <= a.b) mn = Math.min(mn, gm[i]);
+      a.dA = dAt(a.a); a.dB = dAt(a.b); a.minG = mn;
+      a.vTake = vAt(a.a - 0.05);
+      gEvents.push({ t: a.a, g: mn, d: a.dA, type: 'airtime', dur: a.b - a.a });
+    }
+    gEvents.sort((a, b) => a.t - b.t);
+
+    // stats
+    const lapEnd = o.finishM && W.d[W.d.length - 1] >= o.finishM ? lerpTime(W.d, W.t, o.finishM) : null;
+    const tEndStats = lapEnd || end;
+    const rpm = res.cadence.rpm.filter((_, k) => res.cadence.t[k] > 0 && res.cadence.t[k] <= tEndStats + 0.5);
+    const ct = res.cadence.t.filter(x => x > 0 && x <= tEndStats + 0.5);
+    const circ = run.hdr.wheelCircMm / 1000;
+    const vs = []; for (let k = 0; k < W.t.length; k++) if (W.t[k] > 2 && W.t[k] <= tEndStats && !inAir(W.t[k])) vs.push(W.v[k]);
+    const distEnd = dAt(tEndStats);
+    res.stats = {
+      lapTime: lapEnd, finishM: o.finishM || null, timeToStop: end, distance: distEnd, totalDistance: res.totalD,
+      speed: { avg: tEndStats > 0 ? distEnd / tEndStats : null, max: res.peakSpeed, min: vs.length ? Math.min(...vs) : null },
+      wheelRpm: { avg: tEndStats > 0 ? distEnd / tEndStats / circ * 60 : null, max: res.peakSpeed / circ * 60, min: vs.length ? Math.min(...vs) / circ * 60 : null },
+      crankRpm: { avg: rpm.length ? 60 * rpm.length / (rpm.reduce((a, r) => a + 60 / r, 0)) : null, max: rpm.length ? Math.max(...rpm) : null,
+        min: rpm.length ? Math.min(...rpm) : null, revs: rpm.length, firstRev: ct.length ? ct[0] : null },
+      elevation: { startHill: Math.max(0, -prof.h[0] < 0 ? 0 : 0) , gain, loss, levelFrom, dBottom },
+      air: { count: air.length, total: air.reduce((a, x) => a + x.b - x.a, 0), longest: air.reduce((a, x) => Math.max(a, x.b - x.a), 0) },
+      pumps: { count: pumps.length, avgPush: pumps.length ? pumps.reduce((a, q) => a + q.push, 0) / pumps.length : null, speedGain: pumps.reduce((a, q) => a + Math.max(0, q.dv), 0) },
+      peakG: gEvents.filter(e => e.type !== 'airtime').reduce((a, e) => Math.max(a, e.g), 0)
+    };
+    res.stats.elevation.startHill = lerpArr(prof.d, prof.h, 0) - 0;   // height of the gate above the bottom of the hill
+    res.air = air; res.obstacles = obstacles; res.pumps = pumps; res.gEvents = gEvents; res.profile = prof;
+    res.slopeRef = { offset: off, from: levelFrom };
+
+    // samples for drawing (50 per second): time, distance, speed (held through airtime), slope, elevation, g, force into frame
+    const T = { t: [], d: [], v: [], slope: [], h: [], g: [], gn: [], push: [], air: [], ped: [] };
+    const step = Math.max(1, Math.round(fr.rate / 50));
+    for (let i = 0; i < n; i += step) {
+      const tt = tr[i]; if (tt < -0.5 || tt > end + 0.5) continue;
+      const a = air.find(x => tt >= x.a && tt <= x.b);
+      const v = a ? a.vTake + (vAt(a.b + 0.05) - a.vTake) * (tt - a.a) / Math.max(0.01, a.b - a.a) : vAt(tt);
+      T.t.push(tt); T.d.push(dAt(tt)); T.v.push(v); T.slope.push(slope[i]); T.h.push(lerpArr(prof.d, prof.h, dAt(tt)));
+      T.g.push(gm[i]); T.gn.push(gn[i]); T.push.push(push[i]); T.air.push(!!a); T.ped.push(pedaling(tt));
+    }
+    res.track = T;
+    res.crankT = run.crank.map(x => x - t0);
+    res.imu.pitch = Array.from(slope);           // shown as track slope: 0 = level
+    res.imu.pitchIsSlope = true;
   }
 
   function analyze(run, opts) {
@@ -599,6 +863,7 @@ const BMX = (() => {
       }
       res.imu = { t: tg, g: gmag, pitch: pitch.length ? pitch : null };
     } else res.warnings.push('No motion sensor data in this run.');
+    trackAnalysis(run, res, fr, o);
     res.marks = run.marks.map(x => x - res.t0);
     return res;
   }
@@ -660,6 +925,8 @@ const disp = {
   dist(m) { return this.units === 'imperial' ? m * 3.28084 : m; },
   distU() { return this.units === 'imperial' ? 'ft' : 'm'; },
   toMeters(x) { return this.units === 'imperial' ? x / 3.28084 : x; },
+  get finishM() { const v = parseFloat(store.get('finishM')); return v > 0 ? v : null; },
+  height(m) { return this.units === 'imperial' ? (m * 3.28084).toFixed(1) + ' ft' : m.toFixed(2) + ' m'; },
   rollout(m) { return this.units === 'imperial' ? (m * 39.3701).toFixed(1) + ' in' : m.toFixed(2) + ' m'; }
 };
 
@@ -1108,9 +1375,15 @@ $('units').onchange = () => {
   const kmh = launchToKmh(+$('sLaunch').value);
   store.set('units', $('units').value); $('splits').value = disp.splits.join(',');
   if ($('sLaunch').value) $('sLaunch').value = launchToDisp(kmh);
-  showTrigFields(); gearNote(); invalidate();
+  showTrigFields(); gearNote(); finishUi(); invalidate();
 };
 $('splits').onchange = () => { store.set('splits_' + disp.units, $('splits').value); invalidate(); };
+function finishUi() {
+  $('finishLbl').textContent = `Finish line distance from the gate (${disp.distU()})`;
+  $('finishD').value = disp.finishM ? (+disp.dist(disp.finishM).toFixed(1)) : '';
+}
+$('finishD').onchange = () => { const v = parseFloat($('finishD').value); store.set('finishM', v > 0 ? String(disp.toMeters(v)) : ''); invalidate(); };
+finishUi();
 function invalidate() { runs.forEach(r => r.res = null); }
 
 // ---- run history on this phone (IndexedDB). Every run is copied here, so nothing is lost when the
@@ -1399,8 +1672,11 @@ async function renderAnalysis() {
   $('anaEmpty').style.display = active.length ? 'none' : 'block';
   $('anaBody').style.display = active.length ? 'block' : 'none';
   if (!active.length) return;
+  document.querySelectorAll('#anaSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === anaView));
+  document.querySelectorAll('#anaBody .view').forEach(el => el.classList.toggle('on', el.id === 'v-' + anaView));
+  $('runPick').style.display = anaView === 'compare' ? 'none' : '';
   const splitsM = disp.splits.map(x => disp.toMeters(x));
-  active.forEach((r, i) => { if (!r.res) r.res = BMX.analyze(r.run, { splitsM }); r.color = COLORS[i % COLORS.length]; });
+  active.forEach((r, i) => { if (!r.res) r.res = BMX.analyze(r.run, { splitsM, finishM: disp.finishM }); r.color = COLORS[i % COLORS.length]; });
 
   // summary table
   const S = disp.speedU(), D = disp.distU();
@@ -1448,7 +1724,7 @@ async function renderAnalysis() {
   if (active.some(r => r.key === prev)) sel.value = prev;
   renderDetail();
 }
-$('detailSel').onchange = renderDetail;
+$('detailSel').onchange = () => { tl.cursor = null; rp.t = 0; rpStop(); renderDetail(); };
 
 function renderDetail() {
   const r = active.find(x => x.key === $('detailSel').value) || active[0];
@@ -1461,14 +1737,355 @@ function renderDetail() {
   if (x.cadence.t.length) sc.push({ x: x.cadence.t, y: x.cadence.rpm.map(v => v / 10), color: 'var(--muted)', label: 'Pedal RPM ÷ 10', dash: true });
   chart('sc', { series: sc, bands, xLabel: 's', yLabel: S, xMin: 0, xMax: x.moveEnd || tMax, yMin: 0, marks: x.marks,
     legendExtra: [['var(--pedal)', 'Pedaling'], ['var(--coast)', 'Coasting']], readScale: { 1: 10 } });
-  if (x.imu && x.imu.pitch) chart('pi', { series: [{ x: x.imu.t, y: x.imu.pitch, color: r.color, label: 'Pitch ° (nose up +)' }], bands, xLabel: 's', yLabel: '°', xMin: 0, xMax: x.moveEnd || tMax, zero: true });
+  if (x.imu && x.imu.pitch) chart('pi', { series: [{ x: x.imu.t, y: x.imu.pitch, color: r.color, label: x.imu.pitchIsSlope ? 'Track slope ° (estimated, uphill +)' : 'Pitch ° (nose up +)' }], bands, xLabel: 's', yLabel: '°', xMin: 0, xMax: x.moveEnd || tMax, zero: true });
   else chart('pi', { series: [], xLabel: 's', yLabel: '°' });
   if (x.imu) chart('ag', { series: [{ x: x.imu.t, y: x.imu.g, color: r.color, label: 'Total g-force' }], xLabel: 's', yLabel: 'g', xMin: 0, xMax: x.moveEnd || tMax, yMin: 0 });
   else chart('ag', { series: [], xLabel: 's', yLabel: 'g' });
   $('detailWarn').textContent = x.warnings.join(' ');
+  renderViews();
   $('csvBtn').hidden = DEMO;
   $('csvBtn').onclick = () => saveFile(`bmx_run_${r.run.hdr.runId}.csv`, BMX.toCsv(r.run, x), 'text/csv').catch(e => toast(e.message));
 }
+
+// ---- Analyze views: Report, Timeline, Compare, Replay
+let anaView = store.get('anaView') || 'report';
+function setView(v) {
+  anaView = v; store.set('anaView', v);
+  document.querySelectorAll('#anaSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  document.querySelectorAll('#anaBody .view').forEach(el => el.classList.toggle('on', el.id === 'v-' + v));
+  $('runPick').style.display = v === 'compare' ? 'none' : '';
+  if (v !== 'replay') rpStop();
+  renderViews();
+}
+document.querySelectorAll('#anaSeg button').forEach(b => b.onclick = () => setView(b.dataset.v));
+const lerpU = (xs, ys, x) => {
+  const n = xs.length; if (!n) return 0; if (x <= xs[0]) return ys[0]; if (x >= xs[n - 1]) return ys[n - 1];
+  let lo = 0, hi = n - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (xs[m] <= x) lo = m; else hi = m; }
+  return ys[lo] + (x - xs[lo]) / ((xs[hi] - xs[lo]) || 1) * (ys[hi] - ys[lo]);
+};
+const curRun = () => active.find(x => x.key === $('detailSel').value) || active[0];
+const speedAt = (x, t) => x.track ? lerpU(x.track.t, x.track.v, t) : x.wheel ? lerpU(x.wheel.t, x.wheel.v, t) : 0;
+const distAt = (x, t) => (x.wheel ? (t <= 0 ? 0 : lerpU(x.wheel.t, x.wheel.d, t)) : 0);
+const timeAtDist = (x, d) => (x.wheel ? lerpU(x.wheel.d, x.wheel.t, d) : null);
+function crankRpmAt(x, t) { const c = x.cadence; let r = null; for (let k = 0; k < c.t.length && c.t[k] <= t + 1e-6; k++) if (t - c.t[k] < 1.5) r = c.rpm[k]; return r; }
+function crankAngleAt(x, t) {
+  const C = (x.crankT || []).filter(c => c > -1);
+  let k = -1; while (k + 1 < C.length && C[k + 1] <= t) k++;
+  if (k < 0) return 0;
+  if (k + 1 < C.length && C[k + 1] - C[k] < 1.5) return (k + (t - C[k]) / (C[k + 1] - C[k])) * 360;
+  return k * 360;
+}
+
+function renderViews() {
+  if (!active.length) return;
+  const opts = active.map(r => `<option value="${esc(r.key)}">${esc(r.title)}</option>`).join('');
+  const keep = (id, def) => { const el = $(id), v = el.value; el.innerHTML = (id === 'ghostSel' ? '<option value="">None</option>' : '') + opts; el.value = active.some(r => r.key === v) ? v : def; };
+  keep('refSel', active[0].key);
+  keep('ghostSel', '');
+  if (anaView === 'report') renderReport();
+  if (anaView === 'timeline') { Object.keys(charts).forEach(id => drawChart(id)); drawTimeline(); }
+  if (anaView === 'compare') { Object.keys(charts).forEach(id => drawChart(id)); renderCompare(); }
+  if (anaView === 'replay') rpSetup();
+}
+
+// ---- 1. text report
+function lapReport(r) {
+  const x = r.res, h = r.run.hdr, st = x.stats, S = disp.speedU(), D = disp.distU();
+  const sp = v => (v == null ? '-' : disp.speed(v).toFixed(1) + ' ' + S), dd = m => (m == null ? '-' : disp.dist(m).toFixed(0) + ' ' + D);
+  const f = (v, k) => (v == null || !isFinite(v) ? '-' : v.toFixed(k)), pad = (str, n) => String(str).padEnd(n);
+  const L = [];
+  L.push('BMX LOGGER - LAP REPORT');
+  L.push(`Run #${h.runId}${h.label ? '  ' + h.label : ''}`);
+  L.push(`${fmtDate(h.epoch)} · ${h.chainring}/${h.cog} (ratio ${f(x.expectedRatio, 2)}, rollout ${x.rolloutM ? disp.rollout(x.rolloutM) : '-'})`);
+  L.push('');
+  L.push('TIMES');
+  if (st && st.lapTime != null) L.push(`  Lap time (gate to finish, ${dd(st.finishM)})  ${f(st.lapTime, 2)} s`);
+  else L.push(`  Lap time                 set the finish line distance in Settings`);
+  L.push(`  Start to stop            ${f(x.moveEnd, 2)} s over ${dd(x.totalD)}`);
+  const s0 = x.start || {};
+  L.push(`  Start                    ${s0.method || '-'}${s0.unc != null ? ', ±' + f(Math.max(0.01, s0.unc), 2) + ' s' : ''}`);
+  if (x.splits) L.push('  Splits                   ' + x.splits.map((q, k) => `${disp.splits[k]} ${D} ${f(q.t, 2)} s`).join(' · '));
+  if (!st) { L.push(''); L.push('No motion sensor data in this run: speed and times only.'); }
+  else {
+    L.push('');
+    L.push('SPEED (from the wheel; airtime left out)');
+    L.push(`  Average  ${sp(st.speed.avg)}`);
+    L.push(`  Maximum  ${sp(st.speed.max)} at ${f(x.peakT, 1)} s, ${dd(x.peakD)} from the gate`);
+    L.push(`  Minimum  ${sp(st.speed.min)} (after the first 2 s)`);
+    L.push('');
+    L.push('WHEEL RPM');
+    L.push(`  Average ${f(st.wheelRpm.avg, 0)}   Maximum ${f(st.wheelRpm.max, 0)}   Minimum ${f(st.wheelRpm.min, 0)}`);
+    L.push('');
+    L.push('CRANK RPM (while pedalling)');
+    L.push(`  Average ${f(st.crankRpm.avg, 0)}   Maximum ${f(st.crankRpm.max, 0)}   Minimum ${f(st.crankRpm.min, 0)}`);
+    L.push(`  ${st.crankRpm.revs} full crank revolutions; first one done at ${f(st.crankRpm.firstRev, 2)} s; pedalling ${f(x.pedalPct, 0)}% of the time`);
+    L.push('');
+    L.push(`G-FORCES (total; 1 g = standing still)   peak ${f(st.peakG, 1)} g`);
+    L.push(`  ${pad('time', 8)}${pad('position', 10)}${pad('g', 7)}what`);
+    for (const e of x.gEvents) L.push(`  ${pad(f(e.t, 2) + ' s', 8)}${pad(dd(e.d), 10)}${pad(f(e.g, 1), 7)}${e.type === 'airtime' ? `airtime ${f(e.dur, 2)} s (low g)` : e.type}`);
+    if (!x.gEvents.length) L.push('  none over 1.8 g');
+    L.push('');
+    L.push('ELEVATION (estimated from the bike\'s pitch)');
+    L.push(`  Start hill      ${disp.height(st.elevation.startHill)} drop to the bottom`);
+    L.push(`  Climbed         ${disp.height(st.elevation.gain)}    Descended ${disp.height(st.elevation.loss + st.elevation.startHill)}`);
+    L.push(`  Level taken from ${x.slopeRef.from}; finish assumed level with the bottom of the start hill`);
+    L.push('');
+    L.push(`OBSTACLES (estimated)   ${x.obstacles.length} found`);
+    L.push(`  ${pad('#', 4)}${pad('type', 8)}${pad('at', 9)}${pad('face', 9)}${pad('in', 11)}${pad('out', 11)}air`);
+    for (const o of x.obstacles) {
+      const a = x.air.find(q => q.a < o.tEnd + 0.1 && q.b > o.tStart - 0.1);
+      L.push(`  ${pad(o.n, 4)}${pad(o.type, 8)}${pad(dd(o.dStart), 9)}${pad(o.height == null ? '-' : disp.height(o.height), 9)}${pad(sp(speedAt(x, o.tStart)), 11)}${pad(sp(speedAt(x, o.tEnd)), 11)}${a ? f(a.b - a.a, 2) + ' s' : '-'}`);
+    }
+    L.push(`  Airtime: ${st.air.count} time${st.air.count === 1 ? '' : 's'}, ${f(st.air.total, 2)} s in total, longest ${f(st.air.longest, 2)} s`);
+    L.push('');
+    L.push(`PUMPING (estimated rider push on back sides, beyond gravity and track shape)   ${st.pumps.count} pumps`);
+    if (st.pumps.count) {
+      L.push(`  ${pad('time', 8)}${pad('position', 10)}${pad('push', 8)}${pad('speed change', 14)}obstacle`);
+      for (const q of x.pumps) L.push(`  ${pad(f(q.a, 2) + ' s', 8)}${pad(dd(q.dA), 10)}${pad(f(q.push, 2) + ' g', 8)}${pad((q.dv >= 0 ? '+' : '') + disp.speed(q.dv).toFixed(1) + ' ' + S, 14)}${q.obstacle ? '#' + q.obstacle : '-'}`);
+      L.push(`  Average push ${f(st.pumps.avgPush, 2)} g (0.5 g = pressing with half the weight of rider + bike)`);
+    }
+  }
+  if (x.warnings.length) { L.push(''); L.push('NOTES'); for (const w of x.warnings) L.push('  - ' + w); }
+  L.push(''); L.push(`Analysis version ${x.version}`);
+  return L.join('\n');
+}
+function renderReport() {
+  const r = curRun(); if (!r) return;
+  const txt = lapReport(r);
+  $('report').textContent = txt;
+  $('copyRep').onclick = () => navigator.clipboard.writeText(txt).then(() => toast('Report copied')).catch(() => toast('Could not copy'));
+  $('saveRep').onclick = () => saveFile(`bmx_run_${r.run.hdr.runId}_report.txt`, txt, 'text/plain').catch(e => toast(e.message));
+}
+
+// ---- 2. timeline
+const tl = { axis: store.get('tlAxis') || 'time', zoom: 1, cursor: null };
+document.querySelectorAll('#tlAxis button').forEach(b => {
+  b.classList.toggle('on', b.dataset.v === tl.axis);
+  b.onclick = () => { tl.axis = b.dataset.v; store.set('tlAxis', tl.axis); document.querySelectorAll('#tlAxis button').forEach(c => c.classList.toggle('on', c === b)); tl.cursor = null; drawTimeline(); };
+});
+$('tlZoom').onchange = () => { tl.zoom = +$('tlZoom').value; drawTimeline(); };
+const OBC = { jump: '#2563eb', roller: '#16a34a', table: '#9333ea' };
+function drawTimeline() {
+  const r = curRun(), cv = $('tl'); if (!r || anaView !== 'timeline') return;
+  const x = r.res, T = x.track, box = $('tlBox');
+  const W = Math.max(300, Math.round(box.clientWidth * tl.zoom));
+  const lanes = [['Elevation (estimated)', 50], [`Speed ${disp.speedU()}`, 100], ['Pedals: each tick = one crank revolution', 30], ['Obstacles · airtime · pumps', 36], ['Force g: total (grey), rider push (purple)', 70]];
+  const H = lanes.reduce((a, l) => a + l[1] + 16, 0) + 24, dpr = window.devicePixelRatio || 1;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px'; cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const ink = cssVar('var(--ink)'), muted = cssVar('var(--muted)'), line = cssVar('var(--line)');
+  g.font = '11px system-ui,sans-serif';
+  if (!T) { g.fillStyle = muted; g.fillText('This run has no motion sensor data, so there is no timeline.', 10, 24); return; }
+  const useD = tl.axis === 'dist', end = x.moveEnd, x1 = useD ? T.d[T.d.length - 1] : end;
+  const Lp = 6, Rp = 6, X = v => Lp + Math.max(0, Math.min(1, v / x1)) * (W - Lp - Rp);
+  const XT = t => X(useD ? distAt(x, t) : t);           // time -> pixel
+  const xs = useD ? T.d : T.t;
+  let y = 4;
+  const lane = (k, draw) => { g.fillStyle = muted; g.fillText(lanes[k][0], Lp, y + 10); y += 14; draw(y, lanes[k][1]); y += lanes[k][1] + 2; };
+  const poly = (vals, top, hgt, lo, hi, color, width, fillTo) => {
+    g.beginPath(); let started = false;
+    for (let i = 0; i < xs.length; i++) { if (T.t[i] < 0) continue; const px = X(xs[i]), py = top + hgt - (vals[i] - lo) / (hi - lo || 1) * hgt; if (!started) { g.moveTo(px, py); started = true; } else g.lineTo(px, py); }
+    if (fillTo != null) { g.lineTo(X(xs[xs.length - 1]), fillTo); g.lineTo(X(xs[0]), fillTo); g.closePath(); g.fillStyle = color; g.fill(); }
+    else { g.strokeStyle = color; g.lineWidth = width || 1.5; g.stroke(); g.lineWidth = 1; }
+  };
+  // 1 elevation
+  lane(0, (top, hh) => {
+    const lo = Math.min(...T.h), hi = Math.max(...T.h, lo + 0.5);
+    poly(T.h, top, hh, lo, hi, cssVar('var(--line)'), 0, top + hh);
+    poly(T.h, top, hh, lo, hi, muted, 1.2);
+    g.fillStyle = ink;
+    for (const o of x.obstacles) { const px = XT((o.tStart + o.tEnd) / 2); g.fillText(String(o.n), px - 3, top + 9); }
+  });
+  // 2 speed
+  lane(1, (top, hh) => {
+    const hi = Math.max(...T.v.map(v => disp.speed(v))) * 1.08 || 1;
+    const step = niceStep(hi, 4);
+    g.strokeStyle = line; g.fillStyle = muted;
+    for (let v = step; v < hi; v += step) { const py = top + hh - v / hi * hh; g.beginPath(); g.moveTo(Lp, py); g.lineTo(W - Rp, py); g.stroke(); g.fillText(String(Math.round(v)), W - Rp - 18, py - 2); }
+    for (const a of x.air) { g.fillStyle = 'rgba(37,99,235,.12)'; g.fillRect(XT(a.a), top, Math.max(2, XT(a.b) - XT(a.a)), hh); }
+    poly(T.v.map(v => disp.speed(v)), top, hh, 0, hi, r.color || '#2563eb', 2);
+  });
+  // 3 pedals
+  lane(2, (top, hh) => {
+    for (const b of x.bands || []) { g.fillStyle = cssVar(b.state === 'pedal' ? 'var(--pedal)' : 'var(--coast)'); g.fillRect(XT(b.a), top, Math.max(1, XT(b.b) - XT(b.a)), hh); }
+    g.strokeStyle = ink; g.lineWidth = 1.5;
+    for (const c of x.crankT || []) { if (c < 0 || c > end) continue; const px = XT(c); g.beginPath(); g.moveTo(px, top + 4); g.lineTo(px, top + hh - 4); g.stroke(); }
+    g.lineWidth = 1;
+  });
+  // 4 obstacles, air, pumps
+  lane(3, (top, hh) => {
+    for (const o of x.obstacles) {
+      const a = XT(o.tStart), b = XT(o.tEnd);
+      g.fillStyle = OBC[o.type] || muted; g.globalAlpha = 0.22; g.fillRect(a, top, Math.max(2, b - a), hh); g.globalAlpha = 1;
+      g.fillStyle = OBC[o.type] || muted; g.fillText(o.n + (b - a > 40 ? ' ' + o.type : ''), a + 2, top + 11);
+    }
+    g.fillStyle = '#2563eb';
+    for (const a of x.air) g.fillRect(XT(a.a), top + hh - 12, Math.max(2, XT(a.b) - XT(a.a)), 5);
+    g.fillStyle = '#9333ea';
+    for (const q of x.pumps) { const px = XT(q.a), w = Math.max(3, XT(q.b) - px), hgt = Math.min(hh - 16, 8 + q.push * 14); g.fillRect(px, top + hh - 4 - hgt, w, hgt); }
+  });
+  // 5 force
+  lane(4, (top, hh) => {
+    const hi = 4, Y = v => top + hh - Math.max(0, Math.min(hi, v)) / hi * hh;
+    g.strokeStyle = line; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(Lp, Y(1)); g.lineTo(W - Rp, Y(1)); g.stroke(); g.setLineDash([]);
+    g.fillStyle = muted; g.fillText('1 g', W - Rp - 20, Y(1) - 2); g.fillText('4 g', W - Rp - 20, top + 9);
+    poly(T.g.map(v => Math.min(hi, v)), top, hh, 0, hi, muted, 1);
+    poly(T.push.map(v => Math.max(0, Math.min(hi, v))), top, hh, 0, hi, '#9333ea', 1.8);
+  });
+  // axis
+  g.fillStyle = muted; g.strokeStyle = line;
+  const unit = useD ? disp.distU() : 's', span = useD ? disp.dist(x1) : x1, st = niceStep(span, Math.max(4, Math.round(W / 90)));
+  for (let v = 0; v <= span + 1e-6; v += st) { const px = X(useD ? disp.toMeters(v) : v); g.beginPath(); g.moveTo(px, 4); g.lineTo(px, y); g.stroke(); g.fillText(Math.round(v * 10) / 10 + ' ' + unit, px + 2, y + 12); }
+  // cursor
+  if (tl.cursor != null) { const px = X(tl.cursor); g.strokeStyle = ink; g.lineWidth = 1.5; g.beginPath(); g.moveTo(px, 4); g.lineTo(px, y); g.stroke(); g.lineWidth = 1; }
+  $('tlLegend').innerHTML = [['var(--pedal)', 'Pedalling'], ['var(--coast)', 'Coasting'], [OBC.jump, 'Jump'], [OBC.roller, 'Roller'], [OBC.table, 'Tabletop'], ['#2563eb', 'Airtime'], ['#9333ea', 'Pump (push)']]
+    .map(([c, t]) => `<span><i class="band" style="background:${c}"></i>${t}</span>`).join('');
+  cv.onpointerdown = cv.onpointermove = ev => {
+    if (ev.type === 'pointermove' && !ev.buttons && ev.pointerType !== 'mouse') return;
+    const rc = cv.getBoundingClientRect(), v = (ev.clientX - rc.left - Lp) / (W - Lp - Rp) * x1;
+    tl.cursor = Math.max(0, Math.min(x1, v)); readTimeline(r); drawTimeline();
+  };
+  if (tl.cursor != null) readTimeline(r);
+}
+function readTimeline(r) {
+  const x = r.res, T = x.track, useD = tl.axis === 'dist';
+  const t = useD ? timeAtDist(x, tl.cursor) : tl.cursor;
+  let i = 0; while (i < T.t.length - 1 && T.t[i] < t) i++;
+  const rpm = crankRpmAt(x, t), ped = T.ped[i];
+  const ob = x.obstacles.find(o => t >= o.tStart && t <= o.tEnd), pu = x.pumps.find(q => t >= q.a && t <= q.b);
+  $('tlRead').textContent = `${t.toFixed(2)} s · ${disp.dist(distAt(x, t)).toFixed(0)} ${disp.distU()} · ${disp.speed(T.v[i]).toFixed(1)} ${disp.speedU()} · ` +
+    (ped && rpm ? `pedalling ${Math.round(rpm)} rpm` : 'coasting') + ` · slope ${T.slope[i].toFixed(0)}° · ${T.g[i].toFixed(1)} g` +
+    (T.air[i] ? ' · AIRBORNE' : '') + (pu ? ` · pump ${pu.push.toFixed(2)} g` : '') + (ob ? ` · #${ob.n} ${ob.type}` : '');
+}
+
+// ---- 3. compare
+$('refSel').onchange = () => renderCompare();
+function renderCompare() {
+  const ref = active.find(r => r.key === $('refSel').value) || active[0];
+  if (!ref || !ref.res.wheel) return;
+  const R = ref.res, D = disp.distU(), S = disp.speedU();
+  const series = [];
+  for (const r of active) {
+    if (r === ref || !r.res.wheel) continue;
+    // up to the finish line if set, else stop before both runs brake to a halt
+    const maxD = disp.finishM || Math.min(R.wheel.d[R.wheel.d.length - 1], r.res.wheel.d[r.res.wheel.d.length - 1]) - 12;
+    const xs = [], ys = [];
+    for (let d = 1; d <= maxD; d += 0.5) { xs.push(disp.dist(d)); ys.push(timeAtDist(r.res, d) - timeAtDist(R, d)); }
+    series.push({ x: xs, y: ys, color: r.color, label: r.title });
+  }
+  if (series.length) chart('gap', { series, xLabel: D, yLabel: 's', xMin: 0, zero: true });
+  else chart('gap', { series: [], xLabel: D, yLabel: 's' });
+  $('ro-gap').textContent = series.length ? '' : 'Select two or more runs on the Runs tab to compare them.';
+  // obstacle table, matched by position
+  const obs = R.obstacles || [];
+  if (!obs.length) { $('obsCmp').innerHTML = '<p class="small">No obstacles found in the reference run.</p>'; return; }
+  let html = `<table><tr><th style="text-align:left">Obstacle</th>` + active.map(r => `<th><span style="color:${r.color}">&#9632;</span> ${esc(r.title)}</th>`).join('') + '</tr>';
+  for (const o of obs) {
+    html += `<tr><td style="text-align:left">#${o.n} ${o.type} · ${disp.dist(o.dStart).toFixed(0)} ${D}</td>`;
+    for (const r of active) {
+      const m = (r.res.obstacles || []).find(q => Math.abs(q.dStart - o.dStart) < 4 && q.type === o.type) || (r.res.obstacles || []).find(q => Math.abs(q.dStart - o.dStart) < 4);
+      html += m ? `<td>${disp.speed(speedAt(r.res, m.tStart)).toFixed(1)} → ${disp.speed(speedAt(r.res, m.tEnd)).toFixed(1)} ${S}<br><span class="small">${(m.tEnd - m.tStart).toFixed(2)} s through</span></td>` : '<td>-</td>';
+    }
+    html += '</tr>';
+  }
+  $('obsCmp').innerHTML = html + '</table>';
+}
+
+// ---- 4. replay
+const rp = { t: 0, playing: false, last: 0, raf: 0 };
+$('rpPlay').onclick = () => { if (rp.playing) rpStop(); else rpStart(); };
+$('rpScrub').oninput = () => { const x = curRun() && curRun().res; if (!x) return; rp.t = $('rpScrub').value / 1000 * (x.moveEnd || 1); rpDraw(); };
+$('ghostSel').onchange = () => rpDraw();
+function rpSetup() { const x = curRun() && curRun().res; if (!x) return; rp.t = Math.min(rp.t, x.moveEnd || 0); rpDraw(); }
+function rpStart() {
+  const x = curRun() && curRun().res; if (!x || !x.track) return;
+  if (rp.t >= (x.moveEnd || 0) - 0.05) rp.t = -0.5;
+  rp.playing = true; $('rpPlay').textContent = 'Pause'; rp.last = performance.now();
+  const loop = now => {
+    if (!rp.playing) return;
+    rp.t += (now - rp.last) / 1000 * +$('rpSpeed').value; rp.last = now;
+    if (rp.t >= x.moveEnd) { rp.t = x.moveEnd; rpStop(); }
+    $('rpScrub').value = Math.round(Math.max(0, rp.t) / x.moveEnd * 1000);
+    rpDraw(); if (rp.playing) rp.raf = requestAnimationFrame(loop);
+  };
+  rp.raf = requestAnimationFrame(loop);
+}
+function rpStop() { rp.playing = false; cancelAnimationFrame(rp.raf); $('rpPlay').textContent = 'Play'; }
+function rpState(x, t) {
+  const T = x.track, d = distAt(x, t), air = x.air.find(a => t >= a.a && t <= a.b);
+  let lift = 0; if (air) { const T2 = air.b - air.a, f = (t - air.a) / T2; lift = 9.81 * T2 * T2 / 8 * 4 * f * (1 - f); }
+  const i = Math.max(0, Math.min(T.t.length - 1, T.t.findIndex(q => q >= t)));
+  return { d, v: speedAt(x, Math.max(0, t)), slope: lerpU(T.t, T.slope, t), g: T.g[i], push: T.push[i], ped: T.ped[i], air, lift, crank: crankAngleAt(x, t),
+    pump: x.pumps.find(q => t >= q.a && t <= q.b), ob: x.obstacles.find(o => t >= o.tStart && t <= o.tEnd) };
+}
+function rpDraw() {
+  const r = curRun(), cv = $('rp'); if (!r || anaView !== 'replay') return;
+  const x = r.res, dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const ink = cssVar('var(--ink)'), muted = cssVar('var(--muted)'), line = cssVar('var(--line)'), accent = cssVar('var(--accent)');
+  if (!x.track || !x.profile) { g.fillStyle = muted; g.font = '13px system-ui'; g.fillText('This run has no motion sensor data to replay.', 12, 30); return; }
+  const t = rp.t, st = rpState(x, t), P = x.profile;
+  const span = 9, sc = W / span, vx = 2, hCam = lerpU(P.d, P.h, st.d), baseY = H * 0.62;
+  const gx = dd => W * 0.4 + (dd - st.d) * sc, gy = hh => baseY - (hh - hCam) * sc * vx;
+  // ground
+  g.beginPath(); let first = true;
+  for (let dd = st.d - span * 0.45; dd <= st.d + span * 0.65; dd += 0.05) { const px = gx(dd), py = gy(lerpU(P.d, P.h, dd)); if (first) { g.moveTo(px, py); first = false; } else g.lineTo(px, py); }
+  g.lineTo(W, H); g.lineTo(0, H); g.closePath(); g.fillStyle = line; g.fill();
+  g.strokeStyle = muted; g.lineWidth = 2; g.stroke(); g.lineWidth = 1;
+  // distance ticks and obstacle labels
+  g.fillStyle = muted; g.font = '11px system-ui,sans-serif';
+  const tick = disp.units === 'imperial' ? 5 / 3.28084 : 2;
+  for (let dd = Math.ceil((st.d - span) / tick) * tick; dd < st.d + span; dd += tick) { if (dd < 0) continue; const px = gx(dd); g.fillText(Math.round(disp.dist(dd)) + ' ' + disp.distU(), px + 2, H - 6); g.fillRect(px, H - 20, 1, 6); }
+  for (const o of x.obstacles) { const px = gx((o.dTop + o.dBack) / 2); if (px < -40 || px > W + 40) continue; g.fillStyle = OBC[o.type] || muted; g.fillText(`#${o.n} ${o.type}`, px - 18, gy(lerpU(P.d, P.h, o.dTop)) - 44); }
+  // ghost and bike
+  const drawBike = (s, px, alpha, color) => {
+    const a = s.slope * Math.PI / 180 * 1, cy = gy(lerpU(P.d, P.h, (px - W * 0.4) / sc + st.d)) - s.lift * sc * vx;
+    const q = (bx, by) => [px + (bx * Math.cos(a) - by * Math.sin(a)) * sc, cy - (bx * Math.sin(a) + by * Math.cos(a)) * sc];
+    g.globalAlpha = alpha; g.lineWidth = 2.5; g.strokeStyle = color;
+    const rW = 0.254, wb = 0.48, [rx, ry] = q(-wb, rW), [fx, fy] = q(wb, rW), [bbx, bby] = q(0, 0.29), [sx, sy] = q(-0.14, 0.56), [hx, hy] = q(0.4, 0.62), [hbx, hby] = q(0.36, 0.86);
+    const wheelRot = s.d / rW;
+    for (const [cx0, cy0] of [[rx, ry], [fx, fy]]) {
+      g.beginPath(); g.arc(cx0, cy0, rW * sc, 0, 2 * Math.PI); g.stroke();
+      g.lineWidth = 1; for (let k = 0; k < 3; k++) { const an = wheelRot + k * Math.PI / 3; g.beginPath(); g.moveTo(cx0 - Math.cos(an) * rW * sc, cy0 - Math.sin(an) * rW * sc); g.lineTo(cx0 + Math.cos(an) * rW * sc, cy0 + Math.sin(an) * rW * sc); g.stroke(); } g.lineWidth = 2.5;
+    }
+    g.beginPath(); g.moveTo(rx, ry); g.lineTo(bbx, bby); g.lineTo(hx, hy); g.lineTo(sx, sy); g.lineTo(rx, ry); g.moveTo(sx, sy); g.lineTo(bbx, bby); g.moveTo(hx, hy); g.lineTo(fx, fy); g.moveTo(hx, hy); g.lineTo(hbx, hby); g.stroke();
+    // cranks: real revolutions; green while pedalling
+    const ca = -s.crank * Math.PI / 180, arm = 0.175 * sc, pc = s.ped ? '#16a34a' : muted;
+    g.strokeStyle = pc; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(bbx, bby); g.lineTo(bbx + Math.cos(ca) * arm, bby + Math.sin(ca) * arm); g.stroke();
+    g.globalAlpha = alpha * 0.45; g.beginPath(); g.moveTo(bbx, bby); g.lineTo(bbx - Math.cos(ca) * arm, bby - Math.sin(ca) * arm); g.stroke(); g.globalAlpha = alpha;
+    g.fillStyle = pc; g.fillRect(bbx + Math.cos(ca) * arm - 5, bby + Math.sin(ca) * arm - 2, 10, 4);
+    // pumping: arrow pushing down on the frame
+    if (s.pump) { g.strokeStyle = '#9333ea'; g.fillStyle = '#9333ea'; g.lineWidth = 3; const L = 18 + s.pump.push * 30; g.beginPath(); g.moveTo(sx, sy - L - 6); g.lineTo(sx, sy - 6); g.stroke(); g.beginPath(); g.moveTo(sx - 6, sy - 12); g.lineTo(sx + 6, sy - 12); g.lineTo(sx, sy - 4); g.fill(); }
+    g.globalAlpha = 1; g.lineWidth = 1;
+  };
+  const gk = $('ghostSel').value, ghost = gk && gk !== r.key ? active.find(q => q.key === gk) : null;
+  let gs = null;
+  if (ghost && ghost.res.track) { gs = rpState(ghost.res, t); drawBike(gs, W * 0.4 + (gs.d - st.d) * sc, 0.35, ghost.color || muted); }
+  drawBike(st, W * 0.4, 1, ink);
+  // HUD
+  g.fillStyle = ink; g.font = '700 30px system-ui,sans-serif'; g.fillText(disp.speed(st.v).toFixed(1), 12, 36);
+  g.font = '12px system-ui,sans-serif'; g.fillStyle = muted; g.fillText(disp.speedU() + (st.air ? ' (estimated in the air)' : ''), 14, 52);
+  const rpm = crankRpmAt(x, t);
+  g.fillText(`${Math.max(0, t).toFixed(2)} s · ${disp.dist(st.d).toFixed(0)} ${disp.distU()} · ` + (st.ped && rpm ? `pedalling ${Math.round(rpm)} rpm` : 'coasting'), 14, 68);
+  const tags = [];
+  if (st.air) tags.push(['AIRBORNE', '#2563eb']);
+  if (st.pump) tags.push([`PUMP ${st.pump.push.toFixed(2)} g`, '#9333ea']);
+  if (st.ob) tags.push([`#${st.ob.n} ${st.ob.type.toUpperCase()}`, OBC[st.ob.type] || muted]);
+  g.font = '700 12px system-ui,sans-serif'; let tx = W - 12;
+  for (const [txt, c] of tags) { const w = g.measureText(txt).width + 12; tx -= w; g.fillStyle = c; g.fillRect(tx, 10, w, 20); g.fillStyle = '#fff'; g.fillText(txt, tx + 6, 24); tx -= 6; }
+  // g meter
+  const gm = Math.min(4, st.g || 0); g.fillStyle = line; g.fillRect(W - 22, 40, 10, 80); g.fillStyle = gm > 2 ? '#dc2626' : accent; g.fillRect(W - 22, 120 - gm / 4 * 80, 10, gm / 4 * 80);
+  g.fillStyle = muted; g.font = '11px system-ui'; g.fillText((st.g || 0).toFixed(1) + ' g', W - 60, 124);
+  if (gs) { const gap = gs.d - st.d; g.fillStyle = ghost.color || muted; g.fillText(`Ghost ${ghost.title}: ${Math.abs(disp.dist(gap)).toFixed(1)} ${disp.distU()} ${gap > 0 ? 'ahead' : 'behind'}`, 14, 84); }
+  // speed strip
+  const T = x.track, sy0 = H - 44, sh = 18, vmax = Math.max(...T.v) || 1;
+  g.strokeStyle = accent; g.lineWidth = 1.5; g.beginPath();
+  for (let i = 0; i < T.t.length; i++) { const px = 10 + T.t[i] / x.moveEnd * (W - 20), py = sy0 + sh - T.v[i] / vmax * sh; if (i) g.lineTo(px, py); else g.moveTo(px, py); }
+  g.stroke(); g.strokeStyle = ink; g.lineWidth = 2; const cx = 10 + Math.max(0, t) / x.moveEnd * (W - 20); g.beginPath(); g.moveTo(cx, sy0 - 2); g.lineTo(cx, sy0 + sh + 2); g.stroke(); g.lineWidth = 1;
+}
+window.addEventListener('resize', () => { if (anaView === 'timeline') drawTimeline(); if (anaView === 'replay') rpDraw(); });
 
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 

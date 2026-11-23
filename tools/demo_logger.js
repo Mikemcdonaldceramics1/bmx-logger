@@ -14,8 +14,33 @@ window.BMX_DEMO = true;
     return { u, g: () => Math.sqrt(-2 * Math.log(u() + 1e-12)) * Math.cos(2 * Math.PI * u()) };
   }
 
-  // Same rider model as tools/simulate_run.py
+  // A full lap on a track with a gate hill, jump, rollers, rhythm section and tabletop (tools/track_sim.js),
+  // when that file is loaded; otherwise the simple straight-line rider below.
   function simulate(o) {
+    if (window.BmxTrackSim) return simulateTrack(o);
+    return simulateFlat(o);
+  }
+  function simulateTrack(o) {
+    const { run, truth } = window.BmxTrackSim.simulateLap({ seed: o.seed, ring: o.ring, cog: o.cog, circMm: o.circMm, wm: o.wm, cm: o.cm, rate: o.rate });
+    const I = run.imu, recs = [];
+    for (let i = 0; i < I.t.length; i++) recs.push([I.t[i], 0, [I.ax[i] * 2048, I.ay[i] * 2048, I.az[i] * 2048, I.gx[i] * 16.4, I.gy[i] * 16.4, I.gz[i] * 16.4]]);
+    run.wheel.forEach(t => recs.push([t, 1, [0, 0, 0, 0, 0, 0]])); run.crank.forEach(t => recs.push([t, 2, [0, 0, 0, 0, 0, 0]]));
+    recs.sort((a, b) => a[0] - b[0]);
+    const circ = o.circMm / 1000, ratio = o.ring / o.cog, trace = [];
+    let j = 0;
+    for (const p of truth.trace) {
+      const t = p.t + truth.tGate; if (trace.length && t - trace[trace.length - 1].t < 0.05) continue;
+      while (j < I.t.length - 1 && I.t[j] < t) j++;
+      trace.push({ t, kmh: p.v * 3.6, rpm: p.pedaling ? p.v / circ * 60 / ratio : 0, ax: I.ax[j], az: I.az[j], w: 0, c: 0 });
+    }
+    let w = 0, c = 0, k = 0;
+    for (const r of recs) { while (k < trace.length && trace[k].t < r[0]) { trace[k].w = w; trace[k].c = c; k++; } if (r[1] === 1) w++; if (r[1] === 2) c++; }
+    for (; k < trace.length; k++) { trace[k].w = w; trace[k].c = c; }
+    return { recs, trace, duration: I.t[I.t.length - 1] };
+  }
+
+  // Same rider model as tools/simulate_run.py
+  function simulateFlat(o) {
     const R = rng(o.seed), circ = o.circMm / 1000, ratio = o.ring / o.cog, rate = o.rate, dt = 1 / rate;
     const acc_lsb = 2048, gyr_lsb = 16.4, still = 3.0, T = still + 13;   // 3 s at the gate, as the logger keeps
     const coast = [[4.0, 5.0], [7.0, 8.2]], strength = 1 + R.g() * 0.025;
